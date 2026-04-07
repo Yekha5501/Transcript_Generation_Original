@@ -1,16 +1,12 @@
-<!DOCTYPE html>
+ <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>Transcript Generator | Academic Suite</title>
-    <!-- Tailwind CSS + Flowbite CDN (includes Tailwind v3) -->
+    <!-- Tailwind CSS + Flowbite CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Flowbite CSS (component library) -->
-   
-    <!-- Custom Tailwind config overrides for better design (optional but polished) -->
     <style>
-        /* subtle custom transitions for interactive states */
         .card-hover {
             transition: transform 0.2s ease, box-shadow 0.2s ease;
         }
@@ -18,12 +14,6 @@
             transform: translateY(-2px);
             box-shadow: 0 20px 25px -12px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.02);
         }
-        .focus-ring:focus {
-            outline: none;
-            ring: 2px solid #3b82f6;
-            ring-offset: 2px;
-        }
-        /* table row hover effect */
         .preview-table tbody tr:hover {
             background-color: #f9fafb;
         }
@@ -31,44 +21,59 @@
 </head>
 <body class="bg-gradient-to-br from-slate-50 to-blue-50 font-sans antialiased">
 
-    <!-- main container: responsive, centered, with max-w-4xl for larger readability -->
     <div class="min-h-screen py-8 px-4 sm:px-6 lg:py-12">
         <div class="max-w-4xl mx-auto">
-            <!-- main card container using flowbite/tailwind glassmorphic style -->
             <div class="bg-white/90 backdrop-blur-sm rounded-2xl shadow-2xl border border-white/30 overflow-hidden transition-all duration-300">
-                <!-- header with gradient accent -->
+                <!-- header -->
                 <div class="bg-gradient-to-r from-indigo-700 to-blue-700 px-6 py-6 sm:px-8">
                     <div class="flex items-center gap-3">
                         <div class="p-2 bg-white/20 rounded-xl backdrop-blur-sm">
-                            <svg class="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                            <svg class="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
                             </svg>
                         </div>
                         <div>
                             <h1 class="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">Transcript Generator</h1>
-                            <p class="text-indigo-100 text-sm mt-1">Academic records · Instant transcripts · Batch export</p>
+                            <p class="text-indigo-100 text-sm mt-1">Academic records · Instant transcripts · Word & Excel export</p>
                         </div>
                     </div>
                 </div>
                 
                 <div class="p-6 sm:p-8 space-y-8">
-                    <!-- Flash Messages (dynamic alerts using Tailwind + Flowbite classes) -->
+                    <!-- Flash Messages -->
                     @if(session('error'))
-                        <div class="flex items-center p-4 mb-4 text-red-800 rounded-xl bg-red-50 border-l-8 border-red-500 shadow-sm transition-all" role="alert">
+                        <div class="flex items-center p-4 mb-4 text-red-800 rounded-xl bg-red-50 border-l-8 border-red-500 shadow-sm">
                             <svg class="w-5 h-5 mr-3 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"></path></svg>
                             <span class="font-medium">{{ session('error') }}</span>
                         </div>
                     @endif
                     
                     @if(session('success'))
-                        <div class="flex items-center p-4 mb-4 text-green-800 rounded-xl bg-green-50 border-l-8 border-green-500 shadow-sm" role="alert">
+                        <div class="flex items-center p-4 mb-4 text-green-800 rounded-xl bg-green-50 border-l-8 border-green-500 shadow-sm">
                             <svg class="w-5 h-5 mr-3 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path></svg>
                             <span class="font-medium">{{ session('success') }}</span>
                         </div>
                     @endif
 
+                    <!-- Template Selection Toggle -->
+                    <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
+                        <div class="flex flex-col sm:flex-row gap-4 items-center justify-between">
+                            <div class="flex gap-3">
+                                <button onclick="setTemplate('word')" id="btn-word" class="template-btn px-5 py-2.5 rounded-lg font-medium transition-all duration-200 bg-indigo-600 text-white shadow-md">
+                                    📄 Word Document
+                                </button>
+                                <button onclick="setTemplate('excel')" id="btn-excel" class="template-btn px-5 py-2.5 rounded-lg font-medium transition-all duration-200 bg-gray-200 text-gray-700 hover:bg-gray-300">
+                                    📊 Excel Spreadsheet
+                                </button>
+                            </div>
+                            <div class="text-sm text-gray-500">
+                                Current template: <span id="selected-template" class="font-semibold text-indigo-600">Word Document</span>
+                            </div>
+                        </div>
+                    </div>
+
                     <!-- ========== 1. SINGLE STUDENT TRANSCRIPT SECTION ========== -->
-                    <div class="bg-white rounded-xl border border-gray-200 shadow-sm card-hover transition-all duration-200 overflow-hidden">
+                    <div class="bg-white rounded-xl border border-gray-200 shadow-sm card-hover overflow-hidden">
                         <div class="border-b border-gray-100 bg-gray-50/70 px-5 py-4">
                             <div class="flex items-center gap-2">
                                 <div class="p-1.5 bg-indigo-100 rounded-lg">
@@ -80,7 +85,7 @@
                             </div>
                         </div>
                         <div class="p-5">
-                            <form action="#" method="GET" onsubmit="event.preventDefault(); window.location.href = '/transcript/' + document.getElementById('reg_number').value;">
+                            <form id="single-form" action="#" method="GET" onsubmit="event.preventDefault(); generateSingle();">
                                 <label for="reg_number" class="block text-sm font-medium text-gray-700 mb-1.5">Registration Number <span class="text-red-500">*</span></label>
                                 <div class="relative">
                                     <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
@@ -89,7 +94,8 @@
                                     <input type="text" id="reg_number" name="reg_number" placeholder="e.g., BPH26354, CS20123" 
                                            class="block w-full pl-10 pr-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-gray-50/30 transition-all" required>
                                 </div>
-                                <button type="submit" class="mt-5 w-full sm:w-auto inline-flex justify-center items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700 text-white font-medium rounded-lg shadow-md hover:shadow-lg transition-all duration-200 focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                                <input type="hidden" id="template-type" name="template" value="word">
+                                <button type="submit" class="mt-5 w-full sm:w-auto inline-flex justify-center items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700 text-white font-medium rounded-lg shadow-md hover:shadow-lg transition-all duration-200">
                                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
                                     Generate Transcript
                                 </button>
@@ -97,8 +103,8 @@
                         </div>
                     </div>
 
-                    <!-- ========== 2. BATCH TRANSCRIPTS SECTION (ZIP) ==========
-                    <div class="bg-white rounded-xl border border-gray-200 shadow-sm card-hover transition-all duration-200 overflow-hidden">
+                    <!-- ========== 2. BATCH TRANSCRIPTS SECTION ========== -->
+                    <div class="bg-white rounded-xl border border-gray-200 shadow-sm card-hover overflow-hidden">
                         <div class="border-b border-gray-100 bg-gray-50/70 px-5 py-4">
                             <div class="flex items-center gap-2">
                                 <div class="p-1.5 bg-emerald-100 rounded-lg">
@@ -110,13 +116,14 @@
                             </div>
                         </div>
                         <div class="p-5">
-                            <form action="{{ route('transcript.batch') }}" method="POST" enctype="multipart/form-data">
+                            <form action="{{ route('transcript.batch') }}" method="POST" enctype="multipart/form-data" id="batch-form">
                                 @csrf
+                                <input type="hidden" id="batch-template-type" name="template" value="word">
                                 <label for="file" class="block text-sm font-medium text-gray-700 mb-1.5">Upload Student List <span class="text-xs text-gray-500 font-normal">(CSV, Excel, or TXT)</span></label>
                                 <div class="flex flex-col sm:flex-row gap-3 items-start sm:items-center">
                                     <div class="relative w-full">
                                         <input type="file" id="file" name="file" accept=".csv,.txt,.xlsx,.xls" 
-                                               class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100 transition-all cursor-pointer border border-gray-300 rounded-lg shadow-sm focus:outline-none">
+                                               class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100 transition-all cursor-pointer border border-gray-300 rounded-lg shadow-sm" required>
                                     </div>
                                     <button type="submit" class="inline-flex justify-center items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-medium rounded-lg shadow-md transition-all duration-200 whitespace-nowrap">
                                         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3M3 17V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z"></path></svg>
@@ -129,10 +136,10 @@
                                 </p>
                             </form>
                         </div>
-                    </div> -->
+                    </div>
 
-                    <!-- ========== 3. PREVIEW STUDENT GRADES SECTION (DYNAMIC) ========== -->
-                    <div class="bg-white rounded-xl border border-gray-200 shadow-sm card-hover transition-all duration-200 overflow-hidden">
+                    <!-- ========== 3. PREVIEW SECTION ========== -->
+                    <div class="bg-white rounded-xl border border-gray-200 shadow-sm card-hover overflow-hidden">
                         <div class="border-b border-gray-100 bg-gray-50/70 px-5 py-4">
                             <div class="flex items-center gap-2">
                                 <div class="p-1.5 bg-amber-100 rounded-lg">
@@ -158,30 +165,63 @@
                                     </div>
                                 </div>
                                 <button type="button" onclick="previewGrades()" 
-                                        class="inline-flex justify-center items-center gap-2 px-6 py-2.5 bg-amber-500 hover:bg-amber-600 text-white font-medium rounded-lg shadow-md transition-all duration-200 transform active:scale-95">
+                                        class="inline-flex justify-center items-center gap-2 px-6 py-2.5 bg-amber-500 hover:bg-amber-600 text-white font-medium rounded-lg shadow-md transition-all duration-200">
                                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"></path></svg>
                                     Preview Grades
                                 </button>
                             </div>
-                            <!-- dynamic preview result area with enhanced card styling -->
                             <div id="preview-result" class="mt-6 transition-all duration-300"></div>
                         </div>
                     </div>
                     
-                    <!-- footer note: additional info -->
                     <div class="text-center text-xs text-gray-400 pt-2 border-t border-gray-100 mt-2">
-                        <span>🔒 Secure academic portal • Transcripts generated in real-time</span>
+                        <span>🔒 Secure academic portal • Transcripts generated in real-time • Supports Word & Excel formats</span>
                     </div>
                 </div>
             </div>
         </div>
     </div>
 
-    <!-- Flowbite JS (optional for interactive components like tooltips) -->
     <script src="https://cdn.jsdelivr.net/npm/flowbite@4.0.1/dist/flowbite.min.js"></script>
     
     <script>
-        // Enhanced preview function with modern UI rendering & loading state
+        let currentTemplate = 'word';
+        
+        function setTemplate(type) {
+            currentTemplate = type;
+            const wordBtn = document.getElementById('btn-word');
+            const excelBtn = document.getElementById('btn-excel');
+            const selectedSpan = document.getElementById('selected-template');
+            const templateInput = document.getElementById('template-type');
+            const batchTemplateInput = document.getElementById('batch-template-type');
+            
+            if (type === 'word') {
+                wordBtn.classList.remove('bg-gray-200', 'text-gray-700');
+                wordBtn.classList.add('bg-indigo-600', 'text-white', 'shadow-md');
+                excelBtn.classList.remove('bg-indigo-600', 'text-white', 'shadow-md');
+                excelBtn.classList.add('bg-gray-200', 'text-gray-700');
+                selectedSpan.textContent = 'Word Document';
+            } else {
+                excelBtn.classList.remove('bg-gray-200', 'text-gray-700');
+                excelBtn.classList.add('bg-indigo-600', 'text-white', 'shadow-md');
+                wordBtn.classList.remove('bg-indigo-600', 'text-white', 'shadow-md');
+                wordBtn.classList.add('bg-gray-200', 'text-gray-700');
+                selectedSpan.textContent = 'Excel Spreadsheet';
+            }
+            
+            if (templateInput) templateInput.value = type;
+            if (batchTemplateInput) batchTemplateInput.value = type;
+        }
+        
+        function generateSingle() {
+            const regNumber = document.getElementById('reg_number').value.trim();
+            if (!regNumber) {
+                alert('Please enter a registration number');
+                return;
+            }
+            window.location.href = '/transcript/' + encodeURIComponent(regNumber) + '?template=' + currentTemplate;
+        }
+        
         async function previewGrades() {
             const regNumber = document.getElementById('preview_reg').value.trim();
             const resultDiv = document.getElementById('preview-result');
@@ -196,7 +236,6 @@
                 return;
             }
             
-            // Show loading skeleton
             resultDiv.innerHTML = `
                 <div class="animate-pulse bg-gray-100 rounded-xl p-5 border border-gray-200">
                     <div class="flex items-center space-x-3">
@@ -227,7 +266,6 @@
                     return;
                 }
                 
-                // Build beautiful grade table with Flowbite/Tailwind design
                 let gradesHtml = `
                     <div class="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-md">
                         <div class="bg-gradient-to-r from-indigo-50 to-blue-50 px-5 py-4 border-b border-gray-200">
@@ -245,9 +283,9 @@
                             <table class="preview-table min-w-full divide-y divide-gray-200">
                                 <thead class="bg-gray-50">
                                     <tr>
-                                        <th scope="col" class="px-5 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Course Code</th>
-                                        <th scope="col" class="px-5 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Course Name</th>
-                                        <th scope="col" class="px-5 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Grade</th>
+                                        <th class="px-5 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Course Code</th>
+                                        <th class="px-5 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Course Name</th>
+                                        <th class="px-5 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Grade</th>
                                     </tr>
                                 </thead>
                                 <tbody class="bg-white divide-y divide-gray-100">
@@ -255,9 +293,8 @@
                 
                 if (data.grades && data.grades.length > 0) {
                     data.grades.forEach(grade => {
-                        // grade badge color based on performance (optional)
                         let gradeBadgeClass = "bg-gray-100 text-gray-800";
-                        const gradeVal = (grade.grade || '').toUpperCase();
+                        const gradeVal = (grade.grade || '').toString();
                         if (gradeVal.startsWith('A')) gradeBadgeClass = "bg-green-100 text-green-800";
                         else if (gradeVal.startsWith('B')) gradeBadgeClass = "bg-blue-100 text-blue-800";
                         else if (gradeVal.startsWith('C')) gradeBadgeClass = "bg-yellow-100 text-yellow-800";
@@ -298,13 +335,12 @@
                 resultDiv.innerHTML = `
                     <div class="flex items-center p-4 rounded-xl bg-red-50 border-l-8 border-red-500 text-red-800 shadow-sm">
                         <svg class="w-5 h-5 mr-2 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                        <span class="font-medium">Network error or server issue: ${escapeHtml(error.message)}</span>
+                        <span class="font-medium">Network error: ${escapeHtml(error.message)}</span>
                     </div>
                 `;
             }
         }
         
-        // simple helper to prevent XSS from API responses
         function escapeHtml(str) {
             if (!str) return '';
             return str.replace(/[&<>]/g, function(m) {
@@ -312,22 +348,15 @@
                 if (m === '<') return '&lt;';
                 if (m === '>') return '&gt;';
                 return m;
-            }).replace(/[\uD800-\uDBFF][\uDC00-\uDFFF]/g, function(c) {
-                return c;
             });
         }
         
-        // optional: allow pressing Enter in preview input field
         document.getElementById('preview_reg')?.addEventListener('keypress', function(e) {
             if (e.key === 'Enter') {
                 e.preventDefault();
                 previewGrades();
             }
         });
-        
-        // also single transcript input can submit on enter using native behavior, but we keep existing logic 
-        // and just ensure that the form handler works as defined (prevent default and redirect)
-        // Already handled in inline onsubmit.
     </script>
 </body>
 </html>

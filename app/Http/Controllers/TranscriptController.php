@@ -1,12 +1,13 @@
 <?php
-
 namespace App\Http\Controllers;
 
 use App\Models\Student;
 use App\Models\Registration;
 use PhpOffice\PhpWord\TemplateProcessor;
+use PhpOffice\PhpSpreadsheet\IOFactory;
+use PhpOffice\PhpSpreadsheet\Spreadsheet;
+use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 use Illuminate\Http\Request;
-use ZipArchive;
 use Illuminate\Support\Facades\Log;
 
 class TranscriptController extends Controller
@@ -14,9 +15,12 @@ class TranscriptController extends Controller
     /**
      * Generate transcript for a single student
      */
-    public function generate($regNumber)
+    public function generate(Request $request, $regNumber)
     {
         try {
+            // Get template type from request (word or excel)
+            $templateType = $request->get('template', 'word');
+            
             // Find student using username from people table
             $student = Student::where('username', $regNumber)->firstOrFail();
             
@@ -39,31 +43,17 @@ class TranscriptController extends Controller
                 $gradeLookup[$grade->courseid] = $grade->grade;
             }
             
-            // Load Word template
-            $templatePath = storage_path('app/templates/transcript_template_DCM2.docx');
-            
-            if (!file_exists($templatePath)) {
-                throw new \Exception("Transcript template not found at: $templatePath");
-            }
-            
-            $templateProcessor = new TemplateProcessor($templatePath);
-            
-            // Set student information
-            $templateProcessor->setValue('student_name', $student->fullname);
-            $templateProcessor->setValue('reg_number', $student->username);
-            $templateProcessor->setValue('program', $this->getProgramName($student->majorid));
-            $templateProcessor->setValue('generation_date', now()->format('F d, Y'));
-            
             // Get course mapping from config
             $courseMapping = config('course_mapping', []);
             
-            // Fill grades using the mapping
+            // Calculate statistics
             $totalGrades = 0;
             $sumGrades = 0;
+            $gradeData = [];
             
             foreach ($courseMapping as $placeholder => $courseId) {
                 $grade = isset($gradeLookup[$courseId]) ? $gradeLookup[$courseId] : 'N/A';
-                $templateProcessor->setValue($placeholder, $grade);
+                $gradeData[$placeholder] = $grade;
                 
                 if ($grade !== 'N/A' && is_numeric($grade)) {
                     $totalGrades++;
@@ -71,28 +61,31 @@ class TranscriptController extends Controller
                 }
             }
             
-            // Calculate statistics
             $averageGrade = $totalGrades > 0 ? round($sumGrades / $totalGrades, 2) : 'N/A';
             $classification = $this->getClassification($averageGrade);
             
-            $templateProcessor->setValue('total_courses', $totalGrades);
-            $templateProcessor->setValue('average_grade', $averageGrade);
-            $templateProcessor->setValue('classification', $classification);
+            // Prepare student data
+            $studentData = [
+                'student_name' => $student->fullname,
+                'reg_number' => $student->username,
+                'program' => $this->getProgramName($student->majorid),
+                'generation_date' => now()->format('F d, Y'),
+                'total_courses' => $totalGrades,
+                'average_grade' => $averageGrade,
+                'classification' => $classification,
+            ];
             
-            // Save the generated transcript
-            $fileName = 'Transcript_' . str_replace('/', '_', $student->username) . '.docx';
-            $filePath = storage_path("app/transcripts/{$fileName}");
+            // Merge grade data with student data
+            $templateData = array_merge($studentData, $gradeData);
             
-            // Ensure directory exists
-            $directory = dirname($filePath);
-            if (!is_dir($directory)) {
-                mkdir($directory, 0755, true);
+            // Generate based on template type
+            if ($templateType === 'excel') {
+                $filePath = $this->generateExcelTranscript($templateData, $student->username);
+                return response()->download($filePath)->deleteFileAfterSend(true);
+            } else {
+                $filePath = $this->generateWordTranscript($templateData, $student->username);
+                return response()->download($filePath)->deleteFileAfterSend(true);
             }
-            
-            $templateProcessor->saveAs($filePath);
-            
-            // Return the file for download
-            return response()->download($filePath)->deleteFileAfterSend(true);
             
         } catch (\Exception $e) {
             Log::error("Transcript generation failed for {$regNumber}: " . $e->getMessage());
@@ -101,147 +94,158 @@ class TranscriptController extends Controller
     }
     
     /**
-     * Generate transcripts for multiple students from uploaded file
+     * Generate Word transcript
      */
-    public function generateBatch(Request $request)
+    private function generateWordTranscript($templateData, $username)
     {
-        $request->validate([
-            'file' => 'required|file|mimes:csv,txt,xlsx',
-        ]);
+        $templatePath = storage_path('app/templates/transcript_template.docx');
         
-        set_time_limit(300); // 5 minutes timeout for large batches
+        if (!file_exists($templatePath)) {
+            throw new \Exception("Word template not found at: $templatePath");
+        }
         
-        try {
-            // Parse student IDs from uploaded file
-            $studentIds = $this->parseStudentIds($request->file('file'));
-            
-            if (empty($studentIds)) {
-                return back()->with('error', 'No valid registration numbers found in file');
-            }
-            
-            // Create temp directory for individual transcripts
-            $tempDir = storage_path('app/temp/bulk_transcripts_' . time());
-            mkdir($tempDir, 0755, true);
-            
-            // Create ZIP file
-            $zipFileName = 'All_Transcripts_' . date('Y-m-d_H-i-s') . '.zip';
-            $zipPath = storage_path("app/{$zipFileName}");
-            $zip = new ZipArchive();
-            
-            if ($zip->open($zipPath, ZipArchive::CREATE) !== true) {
-                throw new \Exception("Could not create zip file");
-            }
-            
-            $templatePath = storage_path('app/templates/transcript_template.docx');
-            $courseMapping = config('course_mapping', []);
-            $successCount = 0;
-            $failedStudents = [];
-            
-            foreach ($studentIds as $studentId) {
-                try {
-                    // Find student
-                    $student = Student::where('username', $studentId)->first();
-                    if (!$student) {
-                        $failedStudents[] = "$studentId (Student not found)";
-                        continue;
-                    }
-                    
-                    // Get grades - GROUP BY courseid and take MAX grade
-                    $grades = Registration::where('studentid', $studentId)
-                        ->whereNotNull('grade')
-                        ->where('grade', '!=', '')
-                        ->where('grade', '>', 0)
-                        ->select('courseid', Registration::raw('MAX(grade) as grade'))
-                        ->groupBy('courseid')
-                        ->get();
-                    
-                    if ($grades->isEmpty()) {
-                        $failedStudents[] = "$studentId (No grades found)";
-                        continue;
-                    }
-                    
-                    // Create grade lookup with highest grades
-                    $gradeLookup = [];
-                    foreach ($grades as $grade) {
-                        $gradeLookup[$grade->courseid] = $grade->grade;
-                    }
-                    
-                    // Process template
-                    $templateProcessor = new TemplateProcessor($templatePath);
-                    
-                    // Set student info
-                    $templateProcessor->setValue('student_name', $student->fullname);
-                    $templateProcessor->setValue('reg_number', $student->username);
-                    $templateProcessor->setValue('program', $this->getProgramName($student->majorid));
-                    $templateProcessor->setValue('generation_date', now()->format('F d, Y'));
-                    
-                    // Fill grades
-                    $totalGrades = 0;
-                    $sumGrades = 0;
-                    
-                    foreach ($courseMapping as $placeholder => $courseId) {
-                        $grade = isset($gradeLookup[$courseId]) ? $gradeLookup[$courseId] : 'N/A';
-                        $templateProcessor->setValue($placeholder, $grade);
-                        
-                        if ($grade !== 'N/A' && is_numeric($grade)) {
-                            $totalGrades++;
-                            $sumGrades += (float) $grade;
-                        }
-                    }
-                    
-                    // Statistics
-                    $averageGrade = $totalGrades > 0 ? round($sumGrades / $totalGrades, 2) : 'N/A';
-                    $templateProcessor->setValue('total_courses', $totalGrades);
-                    $templateProcessor->setValue('average_grade', $averageGrade);
-                    $templateProcessor->setValue('classification', $this->getClassification($averageGrade));
-                    
-                    // Save individual transcript
-                    $fileName = 'Transcript_' . str_replace('/', '_', $student->username) . '.docx';
-                    $filePath = $tempDir . '/' . $fileName;
-                    $templateProcessor->saveAs($filePath);
-                    
-                    // Add to zip
-                    $zip->addFile($filePath, $fileName);
-                    $successCount++;
-                    
-                } catch (\Exception $e) {
-                    $failedStudents[] = "$studentId (" . $e->getMessage() . ")";
-                    Log::error("Failed to generate transcript for $studentId: " . $e->getMessage());
-                    continue;
-                }
-            }
-            
-            $zip->close();
-            
-            // Clean up temp directory
-            if (is_dir($tempDir)) {
-                $files = glob($tempDir . '/*');
-                foreach ($files as $file) {
-                    unlink($file);
-                }
-                rmdir($tempDir);
-            }
-            
-            if ($successCount === 0) {
-                unlink($zipPath);
-                return back()->with('error', 'No transcripts were generated. Failed students: ' . implode(', ', $failedStudents));
-            }
-            
-            $message = "Generated $successCount transcripts successfully.";
-            if (!empty($failedStudents)) {
-                $message .= " Failed: " . implode(', ', array_slice($failedStudents, 0, 5));
-                if (count($failedStudents) > 5) {
-                    $message .= " and " . (count($failedStudents) - 5) . " more...";
-                }
-            }
-            
-            return response()->download($zipPath)->deleteFileAfterSend(true);
-            
-        } catch (\Exception $e) {
-            Log::error("Batch transcript generation failed: " . $e->getMessage());
-            return back()->with('error', 'Batch generation failed: ' . $e->getMessage());
+        $templateProcessor = new TemplateProcessor($templatePath);
+        
+        // Set all values in the template
+        foreach ($templateData as $placeholder => $value) {
+            $templateProcessor->setValue($placeholder, $value);
+        }
+        
+        // Save the generated transcript
+        $fileName = 'Transcript_' . str_replace('/', '_', $username) . '.docx';
+        $filePath = storage_path("app/transcripts/{$fileName}");
+        
+        $directory = dirname($filePath);
+        if (!is_dir($directory)) {
+            mkdir($directory, 0755, true);
+        }
+        
+        $templateProcessor->saveAs($filePath);
+        
+        return $filePath;
+    }
+    
+    /**
+     * Generate Excel transcript
+     */
+    private function generateExcelTranscript($templateData, $username)
+    {
+        $templatePath = storage_path('app/templates/transcript_template.xlsx');
+        
+        // If Excel template exists, use it; otherwise create from scratch
+        if (file_exists($templatePath)) {
+            $spreadsheet = IOFactory::load($templatePath);
+        } else {
+            $spreadsheet = new Spreadsheet();
+            $this->createDefaultExcelTemplate($spreadsheet);
+        }
+        
+        $sheet = $spreadsheet->getActiveSheet();
+        
+        // Replace placeholders in Excel
+        foreach ($templateData as $placeholder => $value) {
+            $this->replaceExcelPlaceholder($sheet, $placeholder, $value);
+        }
+        
+        // Save the generated transcript
+        $fileName = 'Transcript_' . str_replace('/', '_', $username) . '.xlsx';
+        $filePath = storage_path("app/transcripts/{$fileName}");
+        
+        $directory = dirname($filePath);
+        if (!is_dir($directory)) {
+            mkdir($directory, 0755, true);
+        }
+        
+        $writer = new Xlsx($spreadsheet);
+        $writer->save($filePath);
+        
+        return $filePath;
+    }
+    
+    /**
+     * Create default Excel template structure
+     */
+    private function createDefaultExcelTemplate($spreadsheet)
+    {
+        $sheet = $spreadsheet->getActiveSheet();
+        
+        // Set title
+        $sheet->setCellValue('A1', 'ACADEMIC TRANSCRIPT');
+        $sheet->mergeCells('A1:C1');
+        $sheet->getStyle('A1')->getFont()->setBold(true)->setSize(16);
+        
+        // Student info section
+        $sheet->setCellValue('A3', 'Student Name:');
+        $sheet->setCellValue('B3', '${student_name}');
+        $sheet->setCellValue('A4', 'Registration Number:');
+        $sheet->setCellValue('B4', '${reg_number}');
+        $sheet->setCellValue('A5', 'Program:');
+        $sheet->setCellValue('B5', '${program}');
+        $sheet->setCellValue('A6', 'Date Generated:');
+        $sheet->setCellValue('B6', '${generation_date}');
+        
+        // Course headers
+        $sheet->setCellValue('A8', 'Course Code');
+        $sheet->setCellValue('B8', 'Course Name');
+        $sheet->setCellValue('C8', 'Grade');
+        $sheet->getStyle('A8:C8')->getFont()->setBold(true);
+        
+        // Course rows will be filled dynamically
+        $row = 9;
+        $courseMapping = config('course_mapping', []);
+        
+        foreach ($courseMapping as $placeholder => $courseId) {
+            $sheet->setCellValue('A' . $row, '');
+            $sheet->setCellValue('B' . $row, str_replace('_', ' ', $placeholder));
+            $sheet->setCellValue('C' . $row, '${' . $placeholder . '}');
+            $row++;
+        }
+        
+        // Summary section
+        $row++;
+        $sheet->setCellValue('A' . $row, 'Total Courses Completed:');
+        $sheet->setCellValue('C' . $row, '${total_courses}');
+        $row++;
+        $sheet->setCellValue('A' . $row, 'Average Grade:');
+        $sheet->setCellValue('C' . $row, '${average_grade}');
+        $row++;
+        $sheet->setCellValue('A' . $row, 'Classification:');
+        $sheet->setCellValue('C' . $row, '${classification}');
+        
+        // Auto-size columns
+        foreach (range('A', 'C') as $col) {
+            $sheet->getColumnDimension($col)->setAutoSize(true);
         }
     }
+    
+    /**
+     * Replace placeholders in Excel sheet
+     */
+    private function replaceExcelPlaceholder($sheet, $placeholder, $value)
+    {
+        $search = '${' . $placeholder . '}';
+        
+        // Search all cells in used range
+        $highestRow = $sheet->getHighestRow();
+        $highestColumn = $sheet->getHighestColumn();
+        
+        for ($row = 1; $row <= $highestRow; $row++) {
+            for ($col = 'A'; $col <= $highestColumn; $col++) {
+                $cell = $sheet->getCell($col . $row);
+                $cellValue = $cell->getValue();
+                
+                if (is_string($cellValue) && strpos($cellValue, $search) !== false) {
+                    $newValue = str_replace($search, $value, $cellValue);
+                    $cell->setValue($newValue);
+                }
+            }
+        }
+    }
+    
+    /**
+     * Generate transcripts for multiple students from uploaded file
+     */
+    
     
     /**
      * Parse student IDs from uploaded file
@@ -270,7 +274,7 @@ class TranscriptController extends Controller
                 }
             }
         } elseif ($extension === 'xlsx') {
-            $spreadsheet = \PhpOffice\PhpSpreadsheet\IOFactory::load($file->getPathname());
+            $spreadsheet = IOFactory::load($file->getPathname());
             $sheet = $spreadsheet->getActiveSheet();
             $rows = $sheet->toArray();
             foreach ($rows as $row) {
@@ -293,7 +297,6 @@ class TranscriptController extends Controller
             5 => 'Certificate in Clinical Medicine',
             6 => 'Bachelor of Public Health',
             7 => 'Bachelor of Medical Laboratory Sciences',
-            // Add more programs as needed
         ];
         
         return $programs[$majorId] ?? 'Unknown Program';
