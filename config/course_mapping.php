@@ -131,7 +131,7 @@ return [
     'ltoj236' => 125,     // LTOJ 236 - Life and Teachings of Jesus
     'ltq125' => 126,      // LTQ 125 - Laboratory Techniques
     'lwma363' => 127,     // LWMA 363 - Liquid Waste Management
-    'mat1106' => 128,     // MAT 1106 - Mathematics
+    'mat1106' => 128,     // MAT 1106 - Mathematics.
     'mat124' => 129,      // MAT 124 - Laboratory Mathematics
     'math1106' => 130,    // MATH 1106 - Mathematics
     'mcpa118' => 131,     // MCPA 118 - Microbiology and Parasitology
