@@ -1,4 +1,4 @@
- <!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -16,6 +16,19 @@
         }
         .preview-table tbody tr:hover {
             background-color: #f9fafb;
+        }
+        @keyframes slideIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        .animate-slide-in {
+            animation: slideIn 0.3s ease-out;
         }
     </style>
 </head>
@@ -52,6 +65,13 @@
                         <div class="flex items-center p-4 mb-4 text-green-800 rounded-xl bg-green-50 border-l-8 border-green-500 shadow-sm">
                             <svg class="w-5 h-5 mr-3 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path></svg>
                             <span class="font-medium">{{ session('success') }}</span>
+                        </div>
+                    @endif
+
+                    @if(session('info'))
+                        <div class="flex items-center p-4 mb-4 text-blue-800 rounded-xl bg-blue-50 border-l-8 border-blue-500 shadow-sm">
+                            <svg class="w-5 h-5 mr-3 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a1 1 0 000 2v3a1 1 0 001 1h1a1 1 0 100-2v-3a1 1 0 00-1-1H9z" clip-rule="evenodd"></path></svg>
+                            <span class="font-medium">{{ session('info') }}</span>
                         </div>
                     @endif
 
@@ -112,27 +132,42 @@
                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path>
                                     </svg>
                                 </div>
-                                <h2 class="text-lg font-semibold text-gray-800">Batch Transcripts (ZIP Export)</h2>
+                                <h2 class="text-lg font-semibold text-gray-800">Batch Transcripts</h2>
+                                <span class="ml-2 text-xs bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full">Manual Control</span>
                             </div>
                         </div>
                         <div class="p-5">
-                            <form action="{{ route('transcript.batch') }}" method="POST" enctype="multipart/form-data" id="batch-form">
+                            <form action="{{ route('transcript.batch.queue') }}" method="POST" enctype="multipart/form-data" id="batch-form">
                                 @csrf
                                 <input type="hidden" id="batch-template-type" name="template" value="word">
+                                <input type="hidden" name="mode" value="sequential">
+                                
                                 <label for="file" class="block text-sm font-medium text-gray-700 mb-1.5">Upload Student List <span class="text-xs text-gray-500 font-normal">(CSV, Excel, or TXT)</span></label>
+                                
+                                <div class="mb-4 p-3 bg-blue-50 rounded-lg border border-blue-200">
+                                    <div class="flex items-center gap-2">
+                                        <svg class="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                                        </svg>
+                                        <p class="text-sm text-blue-800">
+                                            <span class="font-semibold">Batch Mode:</span> Upload CSV to see all students. Download individually or use batch controls.
+                                        </p>
+                                    </div>
+                                </div>
+                                
                                 <div class="flex flex-col sm:flex-row gap-3 items-start sm:items-center">
                                     <div class="relative w-full">
                                         <input type="file" id="file" name="file" accept=".csv,.txt,.xlsx,.xls" 
                                                class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100 transition-all cursor-pointer border border-gray-300 rounded-lg shadow-sm" required>
                                     </div>
-                                    <button type="submit" class="inline-flex justify-center items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-medium rounded-lg shadow-md transition-all duration-200 whitespace-nowrap">
-                                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3M3 17V7a2 2 0 012-2h6l2 2h6a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z"></path></svg>
-                                        Generate All Transcripts (ZIP)
+                                    <button type="submit" id="batch-submit-btn" class="inline-flex justify-center items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-medium rounded-lg shadow-md transition-all duration-200 whitespace-nowrap">
+                                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4-4m0 0L8 8m4-4v12"></path></svg>
+                                        Prepare Batch Downloads
                                     </button>
                                 </div>
                                 <p class="mt-3 text-xs text-gray-500 flex items-center gap-1">
                                     <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                                    File should contain one registration number per row/column. Supported: .csv, .txt, .xlsx
+                                    Upload CSV file with registration numbers. You'll be able to download each transcript individually.
                                 </p>
                             </form>
                         </div>
@@ -267,7 +302,7 @@
                 }
                 
                 let gradesHtml = `
-                    <div class="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-md">
+                    <div class="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-md animate-slide-in">
                         <div class="bg-gradient-to-r from-indigo-50 to-blue-50 px-5 py-4 border-b border-gray-200">
                             <div class="flex flex-wrap justify-between items-start gap-2">
                                 <div>

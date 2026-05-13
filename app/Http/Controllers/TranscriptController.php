@@ -8,6 +8,7 @@ use PhpOffice\PhpSpreadsheet\IOFactory;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Session;
 use Illuminate\Support\Facades\Log;
 
 class TranscriptController extends Controller
@@ -126,26 +127,28 @@ class TranscriptController extends Controller
     }
     
     /**
-     * Generate Excel transcript
+     * Generate Excel transcript using the template file
      */
     private function generateExcelTranscript($templateData, $username)
     {
-        $templatePath = storage_path('app/templates/transcript_template.xlsx');
+        $templatePath = storage_path('app/templates/BMLS 1.xlsx');
         
-        // If Excel template exists, use it; otherwise create from scratch
-        if (file_exists($templatePath)) {
-            $spreadsheet = IOFactory::load($templatePath);
-        } else {
-            $spreadsheet = new Spreadsheet();
-            $this->createDefaultExcelTemplate($spreadsheet);
+        // Check if Excel template exists
+        if (!file_exists($templatePath)) {
+            throw new \Exception("Excel template not found at: $templatePath");
         }
         
+        // Load the template
+        $spreadsheet = IOFactory::load($templatePath);
         $sheet = $spreadsheet->getActiveSheet();
         
-        // Replace placeholders in Excel
+        // Replace placeholders in Excel - iterate through all template data
         foreach ($templateData as $placeholder => $value) {
-            $this->replaceExcelPlaceholder($sheet, $placeholder, $value);
+            $this->replaceExcelPlaceholderRecursive($sheet, $placeholder, $value);
         }
+        
+        // Also try direct cell replacement for common placeholders
+        $this->replaceExcelPlaceholderDirect($sheet, $templateData);
         
         // Save the generated transcript
         $fileName = 'Transcript_' . str_replace('/', '_', $username) . '.xlsx';
@@ -163,69 +166,13 @@ class TranscriptController extends Controller
     }
     
     /**
-     * Create default Excel template structure
+     * Replace placeholders in Excel sheet recursively through all cells
      */
-    private function createDefaultExcelTemplate($spreadsheet)
-    {
-        $sheet = $spreadsheet->getActiveSheet();
-        
-        // Set title
-        $sheet->setCellValue('A1', 'ACADEMIC TRANSCRIPT');
-        $sheet->mergeCells('A1:C1');
-        $sheet->getStyle('A1')->getFont()->setBold(true)->setSize(16);
-        
-        // Student info section
-        $sheet->setCellValue('A3', 'Student Name:');
-        $sheet->setCellValue('B3', '${student_name}');
-        $sheet->setCellValue('A4', 'Registration Number:');
-        $sheet->setCellValue('B4', '${reg_number}');
-        $sheet->setCellValue('A5', 'Program:');
-        $sheet->setCellValue('B5', '${program}');
-        $sheet->setCellValue('A6', 'Date Generated:');
-        $sheet->setCellValue('B6', '${generation_date}');
-        
-        // Course headers
-        $sheet->setCellValue('A8', 'Course Code');
-        $sheet->setCellValue('B8', 'Course Name');
-        $sheet->setCellValue('C8', 'Grade');
-        $sheet->getStyle('A8:C8')->getFont()->setBold(true);
-        
-        // Course rows will be filled dynamically
-        $row = 9;
-        $courseMapping = config('course_mapping', []);
-        
-        foreach ($courseMapping as $placeholder => $courseId) {
-            $sheet->setCellValue('A' . $row, '');
-            $sheet->setCellValue('B' . $row, str_replace('_', ' ', $placeholder));
-            $sheet->setCellValue('C' . $row, '${' . $placeholder . '}');
-            $row++;
-        }
-        
-        // Summary section
-        $row++;
-        $sheet->setCellValue('A' . $row, 'Total Courses Completed:');
-        $sheet->setCellValue('C' . $row, '${total_courses}');
-        $row++;
-        $sheet->setCellValue('A' . $row, 'Average Grade:');
-        $sheet->setCellValue('C' . $row, '${average_grade}');
-        $row++;
-        $sheet->setCellValue('A' . $row, 'Classification:');
-        $sheet->setCellValue('C' . $row, '${classification}');
-        
-        // Auto-size columns
-        foreach (range('A', 'C') as $col) {
-            $sheet->getColumnDimension($col)->setAutoSize(true);
-        }
-    }
-    
-    /**
-     * Replace placeholders in Excel sheet
-     */
-    private function replaceExcelPlaceholder($sheet, $placeholder, $value)
+    private function replaceExcelPlaceholderRecursive($sheet, $placeholder, $value)
     {
         $search = '${' . $placeholder . '}';
         
-        // Search all cells in used range
+        // Get all used cells
         $highestRow = $sheet->getHighestRow();
         $highestColumn = $sheet->getHighestColumn();
         
@@ -243,9 +190,62 @@ class TranscriptController extends Controller
     }
     
     /**
-     * Generate transcripts for multiple students from uploaded file
+     * Direct replacement for specific cells (faster for known placeholders)
      */
+    private function replaceExcelPlaceholderDirect($sheet, $templateData)
+    {
+        // Define common placeholder locations (adjust based on your template)
+        $placeholderLocations = [
+            'student_name' => ['B3', 'B4'], // Try multiple possible locations
+            'reg_number' => ['B4', 'B5'],
+            'program' => ['B5', 'B6'],
+            'generation_date' => ['B6', 'B7'],
+            'total_courses' => ['C' . ($this->findRowWithText($sheet, 'Total Courses') + 1), 'C20'],
+            'average_grade' => ['C' . ($this->findRowWithText($sheet, 'Average Grade') + 1), 'C21'],
+            'classification' => ['C' . ($this->findRowWithText($sheet, 'Classification') + 1), 'C22'],
+        ];
+        
+        foreach ($templateData as $placeholder => $value) {
+            $search = '${' . $placeholder . '}';
+            
+            // Search entire sheet for this specific placeholder
+            $highestRow = $sheet->getHighestRow();
+            $highestColumn = $sheet->getHighestColumn();
+            
+            for ($row = 1; $row <= $highestRow; $row++) {
+                for ($col = 'A'; $col <= $highestColumn; $col++) {
+                    $cell = $sheet->getCell($col . $row);
+                    $cellValue = $cell->getValue();
+                    
+                    if (is_string($cellValue) && $cellValue === $search) {
+                        $cell->setValue($value);
+                    } elseif (is_string($cellValue) && strpos($cellValue, $search) !== false) {
+                        $newValue = str_replace($search, $value, $cellValue);
+                        $cell->setValue($newValue);
+                    }
+                }
+            }
+        }
+    }
     
+    /**
+     * Find row number containing specific text
+     */
+    private function findRowWithText($sheet, $searchText)
+    {
+        $highestRow = $sheet->getHighestRow();
+        $highestColumn = $sheet->getHighestColumn();
+        
+        for ($row = 1; $row <= $highestRow; $row++) {
+            for ($col = 'A'; $col <= $highestColumn; $col++) {
+                $cellValue = $sheet->getCell($col . $row)->getValue();
+                if (is_string($cellValue) && stripos($cellValue, $searchText) !== false) {
+                    return $row;
+                }
+            }
+        }
+        return 0;
+    }
     
     /**
      * Parse student IDs from uploaded file
@@ -315,7 +315,7 @@ class TranscriptController extends Controller
     }
     
     /**
-     * Preview student grades (for debugging) - FIXED to show highest grades only
+     * Preview student grades (for debugging)
      */
     public function preview($regNumber)
     {
@@ -364,6 +364,211 @@ class TranscriptController extends Controller
             'total_grades' => $totalGrades,
             'average_grade' => $averageGrade,
             'classification' => $this->getClassification($averageGrade),
+        ]);
+    }
+
+    /**
+     * Queue batch transcripts for sequential download
+     */
+    public function queueBatch(Request $request)
+    {
+        $request->validate([
+            'file' => 'required|file|mimes:csv,txt,xlsx,xls'
+        ]);
+        
+        // Parse student IDs from uploaded file
+        $studentIds = $this->parseStudentIds($request->file('file'));
+        
+        // Clean all IDs - Remove BOM, invisible chars, trim
+        $studentIds = array_map(function($id) {
+            $id = preg_replace('/[\x00-\x1F\x7F-\x9F]/u', '', $id);
+            $id = preg_replace('/^[\pZ\pC]+|[\pZ\pC]+$/u', '', $id);
+            return trim($id);
+        }, $studentIds);
+        
+        // Remove empty values
+        $studentIds = array_filter($studentIds, function($id) {
+            return !empty($id);
+        });
+        
+        // Re-index array
+        $studentIds = array_values($studentIds);
+        
+        if (empty($studentIds)) {
+            return back()->with('error', 'No valid student IDs found in the file.');
+        }
+        
+        // Get template type from request
+        $templateType = $request->input('template', 'word');
+        
+        // Create a unique queue ID
+        $queueId = uniqid('batch_', true);
+        
+        // Store the queue in session
+        $queue = [
+            'ids' => $studentIds,
+            'current_index' => 0,
+            'total' => count($studentIds),
+            'completed' => [],
+            'failed' => [],
+            'template' => $templateType,
+            'timestamp' => now()
+        ];
+        
+        Session::put("transcript_queue_{$queueId}", $queue);
+        
+        return redirect()->route('transcript.batch.list', ['queueId' => $queueId])
+            ->with('info', "{$queue['total']} student(s) loaded. Click download buttons to generate transcripts.");
+    }
+
+    /**
+     * Show batch list with all student IDs
+     */
+    public function showBatchList($queueId, Request $request)
+    {
+        $queue = Session::get("transcript_queue_{$queueId}");
+        
+        if (!$queue) {
+            return redirect()->route('transcript.index')
+                ->with('error', 'Batch session expired. Please upload the file again.');
+        }
+        
+        // Get template from URL parameter or from queue
+        $template = $request->get('template', $queue['template']);
+        
+        // Update queue template if changed
+        if ($queue['template'] !== $template) {
+            $queue['template'] = $template;
+            Session::put("transcript_queue_{$queueId}", $queue);
+        }
+        
+        // Prepare student list for the view
+        $students = [];
+        foreach ($queue['ids'] as $index => $regNumber) {
+            $students[] = [
+                'id' => $index,
+                'registration_number' => $regNumber
+            ];
+        }
+        
+        return view('batch-list', [
+            'students' => $students,
+            'total' => count($students),
+            'queueId' => $queueId,
+            'template' => $template
+        ]);
+    }
+
+    /**
+     * Download a single transcript from batch
+     */
+    public function downloadBatchTranscript($queueId, $studentId, Request $request)
+    {
+        $queue = Session::get("transcript_queue_{$queueId}");
+        
+        if (!$queue) {
+            return response()->json(['error' => 'Batch session expired'], 404);
+        }
+        
+        // Get template from URL parameter or from queue
+        $templateType = $request->get('template', $queue['template']);
+        $regNumber = $queue['ids'][$studentId];
+        
+        try {
+            // Clean the registration number
+            $regNumber = trim($regNumber);
+            $regNumber = preg_replace('/[\x00-\x1F\x7F-\x9F]/u', '', $regNumber);
+            $regNumber = trim($regNumber);
+            
+            // Find student
+            $student = Student::where('username', $regNumber)->first();
+            
+            if (!$student) {
+                throw new \Exception("Student not found: {$regNumber}");
+            }
+            
+            // Get grades
+            $grades = Registration::where('studentid', $regNumber)
+                ->whereNotNull('grade')
+                ->where('grade', '!=', '')
+                ->where('grade', '>', 0)
+                ->select('courseid', Registration::raw('MAX(grade) as grade'))
+                ->groupBy('courseid')
+                ->get();
+            
+            if ($grades->isEmpty()) {
+                throw new \Exception("No grades found");
+            }
+            
+            $gradeLookup = [];
+            foreach ($grades as $grade) {
+                $gradeLookup[$grade->courseid] = $grade->grade;
+            }
+            
+            $courseMapping = config('course_mapping', []);
+            $totalGrades = 0;
+            $sumGrades = 0;
+            $gradeData = [];
+            
+            foreach ($courseMapping as $placeholder => $courseId) {
+                $grade = isset($gradeLookup[$courseId]) ? $gradeLookup[$courseId] : 'N/A';
+                $gradeData[$placeholder] = $grade;
+                if ($grade !== 'N/A' && is_numeric($grade)) {
+                    $totalGrades++;
+                    $sumGrades += (float) $grade;
+                }
+            }
+            
+            $averageGrade = $totalGrades > 0 ? round($sumGrades / $totalGrades, 2) : 'N/A';
+            $classification = $this->getClassification($averageGrade);
+            
+            $studentData = [
+                'student_name' => $student->fullname,
+                'reg_number' => $student->username,
+                'program' => $this->getProgramName($student->majorid),
+                'generation_date' => now()->format('F d, Y'),
+                'total_courses' => $totalGrades,
+                'average_grade' => $averageGrade,
+                'classification' => $classification,
+            ];
+            
+            $templateData = array_merge($studentData, $gradeData);
+            
+            // Generate file based on template type
+            if ($templateType === 'excel') {
+                $filePath = $this->generateExcelTranscript($templateData, $student->username);
+            } else {
+                $filePath = $this->generateWordTranscript($templateData, $student->username);
+            }
+            
+            // Return file download
+            return response()->download($filePath, basename($filePath))->deleteFileAfterSend(true);
+            
+        } catch (\Exception $e) {
+            Log::error("Batch download failed for {$regNumber}: " . $e->getMessage());
+            return response()->json(['error' => $e->getMessage()], 500);
+        }
+    }
+    
+    /**
+     * Get queue status (for AJAX polling)
+     */
+    public function getQueueStatus($queueId)
+    {
+        $queue = Session::get("transcript_queue_{$queueId}");
+        
+        if (!$queue) {
+            return response()->json(['error' => 'Queue not found'], 404);
+        }
+        
+        return response()->json([
+            'total' => $queue['total'],
+            'completed' => count($queue['completed']),
+            'failed' => count($queue['failed']),
+            'current_index' => $queue['current_index'],
+            'remaining' => $queue['total'] - $queue['current_index'],
+            'completed_list' => $queue['completed'],
+            'failed_list' => $queue['failed']
         ]);
     }
 }

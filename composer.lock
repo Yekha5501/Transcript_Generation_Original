@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "bdbb367a158f0ad037461974e84c37b5",
+    "content-hash": "39a63e50eb58b4d1d1edef5dce00f74e",
     "packages": [
         {
             "name": "brick/math",
@@ -3829,6 +3829,67 @@
                 "source": "https://github.com/ramsey/uuid/tree/4.9.2"
             },
             "time": "2025-12-14T04:43:48+00:00"
+        },
+        {
+            "name": "robinncode/laravel-db-craft",
+            "version": "1.0.3",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/robinNcode/lara-db-craft.git",
+                "reference": "ffcbf304af69d81ff5942543f58bca257934bd38"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/robinNcode/lara-db-craft/zipball/ffcbf304af69d81ff5942543f58bca257934bd38",
+                "reference": "ffcbf304af69d81ff5942543f58bca257934bd38",
+                "shasum": ""
+            },
+            "require": {
+                "php": "^8.0|^8.1|^8.2|^8.3"
+            },
+            "require-dev": {
+                "orchestra/testbench": "^7.0|^8.0|^9.0",
+                "phpunit/phpunit": "^9.5|^10.0"
+            },
+            "type": "package",
+            "extra": {
+                "laravel": {
+                    "providers": [
+                        "RobinNcode\\LaravelDbCraft\\DbCraftServiceProvider"
+                    ]
+                }
+            },
+            "autoload": {
+                "psr-4": {
+                    "RobinNcode\\LaravelDbCraft\\": "src/"
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "MIT"
+            ],
+            "authors": [
+                {
+                    "name": "Mohammad Shahin Mia Robin",
+                    "email": "msmrobin518@gmail.com"
+                }
+            ],
+            "description": "Generate Laravel migrations and seeders from existing database connections",
+            "homepage": "https://github.com/robinNcode/lara-db-craft",
+            "keywords": [
+                "database",
+                "generator",
+                "laravel",
+                "migration",
+                "seeder"
+            ],
+            "support": {
+                "documentation": "https://github.com/robinNcode/lara-db-craft/blob/master/README.md",
+                "email": "msmrobin518@gmail.com",
+                "issues": "https://github.com/robinNcode/lara-db-craft/issues",
+                "source": "https://github.com/robinNcode/lara-db-craft/tree/v1.0.3"
+            },
+            "time": "2025-11-01T17:56:09+00:00"
         },
         {
             "name": "symfony/clock",

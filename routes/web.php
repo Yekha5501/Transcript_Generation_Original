@@ -35,3 +35,20 @@ Route::get('/transcript/batch/results', [TranscriptController::class, 'downloadB
 
 
 Route::get('/transcript/clear', [TranscriptController::class, 'clearResults'])->name('transcript.clear');
+
+// Batch processing routes
+Route::post('/transcript/batch/queue', [TranscriptController::class, 'queueBatch'])->name('transcript.batch.queue');
+Route::get('/transcript/batch/process/{queueId}/{index}', [TranscriptController::class, 'processQueueItem'])->name('transcript.batch.process');
+Route::get('/transcript/batch/status/{queueId}', [TranscriptController::class, 'getQueueStatus'])->name('transcript.batch.status');
+Route::get('/download-temp/{filename}', [TranscriptController::class, 'downloadTemp'])->name('download.temp');
+// Batch routes
+Route::get('/transcript/batch/list/{queueId}', [TranscriptController::class, 'showBatchList'])->name('transcript.batch.list');
+Route::get('/transcript/batch/download/{queueId}/{studentId}', [TranscriptController::class, 'downloadBatchTranscript'])->name('transcript.batch.download');
+
+
+// Batch routes
+Route::post('/transcript/batch/queue', [TranscriptController::class, 'queueBatch'])->name('transcript.batch.queue');
+Route::get('/transcript/batch/list/{queueId}', [TranscriptController::class, 'showBatchList'])->name('transcript.batch.list');
+Route::get('/transcript/batch/download/{queueId}/{studentId}', [TranscriptController::class, 'downloadBatchTranscript'])->name('transcript.batch.download');
+Route::get('/transcript/batch/status/{queueId}', [TranscriptController::class, 'getQueueStatus'])->name('transcript.batch.status');
+Route::get('/download-temp/{filename}', [TranscriptController::class, 'downloadTemp'])->name('download.temp');
