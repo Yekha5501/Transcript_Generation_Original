@@ -1,4 +1,5 @@
 <?php
+
 namespace App\Http\Controllers;
 
 use App\Models\Student;
@@ -81,11 +82,13 @@ class TranscriptController extends Controller
             
             // Generate based on template type
             if ($templateType === 'excel') {
-                $filePath = $this->generateExcelTranscript($templateData, $student->username);
-                return response()->download($filePath)->deleteFileAfterSend(true);
+                $filePath = $this->generateExcelTranscript($templateData, $student->fullname);
+                $fileName = basename($filePath);
+                return response()->download($filePath, $fileName)->deleteFileAfterSend(true);
             } else {
-                $filePath = $this->generateWordTranscript($templateData, $student->username);
-                return response()->download($filePath)->deleteFileAfterSend(true);
+                $filePath = $this->generateWordTranscript($templateData, $student->fullname);
+                $fileName = basename($filePath);
+                return response()->download($filePath, $fileName)->deleteFileAfterSend(true);
             }
             
         } catch (\Exception $e) {
@@ -97,9 +100,9 @@ class TranscriptController extends Controller
     /**
      * Generate Word transcript
      */
-    private function generateWordTranscript($templateData, $username)
+    private function generateWordTranscript($templateData, $studentName)
     {
-        $templatePath = storage_path('app/templates/BMS_TRANCRIPT_TEMPLATE.docx');
+        $templatePath = storage_path('app/templates/NMT.docx');
         
         if (!file_exists($templatePath)) {
             throw new \Exception("Word template not found at: $templatePath");
@@ -112,8 +115,11 @@ class TranscriptController extends Controller
             $templateProcessor->setValue($placeholder, $value);
         }
         
-        // Save the generated transcript
-        $fileName = 'Transcript_' . str_replace('/', '_', $username) . '.docx';
+        // Sanitize filename (remove special characters) - use only student name
+        $sanitizedName = $this->sanitizeFilename($studentName);
+        
+        // Save the generated transcript with student name only
+        $fileName = $sanitizedName . '.docx';
         $filePath = storage_path("app/transcripts/{$fileName}");
         
         $directory = dirname($filePath);
@@ -129,9 +135,9 @@ class TranscriptController extends Controller
     /**
      * Generate Excel transcript using the template file
      */
-    private function generateExcelTranscript($templateData, $username)
+    private function generateExcelTranscript($templateData, $studentName)
     {
-        $templatePath = storage_path('app/templates/BMLS 1.xlsx');
+        $templatePath = storage_path('app/templates/BSNM 6.xlsx');
         
         // Check if Excel template exists
         if (!file_exists($templatePath)) {
@@ -150,8 +156,11 @@ class TranscriptController extends Controller
         // Also try direct cell replacement for common placeholders
         $this->replaceExcelPlaceholderDirect($sheet, $templateData);
         
-        // Save the generated transcript
-        $fileName = 'Transcript_' . str_replace('/', '_', $username) . '.xlsx';
+        // Sanitize filename (remove special characters) - use only student name
+        $sanitizedName = $this->sanitizeFilename($studentName);
+        
+        // Save the generated transcript with student name only
+        $fileName = $sanitizedName . '.xlsx';
         $filePath = storage_path("app/transcripts/{$fileName}");
         
         $directory = dirname($filePath);
@@ -194,17 +203,6 @@ class TranscriptController extends Controller
      */
     private function replaceExcelPlaceholderDirect($sheet, $templateData)
     {
-        // Define common placeholder locations (adjust based on your template)
-        $placeholderLocations = [
-            'student_name' => ['B3', 'B4'], // Try multiple possible locations
-            'reg_number' => ['B4', 'B5'],
-            'program' => ['B5', 'B6'],
-            'generation_date' => ['B6', 'B7'],
-            'total_courses' => ['C' . ($this->findRowWithText($sheet, 'Total Courses') + 1), 'C20'],
-            'average_grade' => ['C' . ($this->findRowWithText($sheet, 'Average Grade') + 1), 'C21'],
-            'classification' => ['C' . ($this->findRowWithText($sheet, 'Classification') + 1), 'C22'],
-        ];
-        
         foreach ($templateData as $placeholder => $value) {
             $search = '${' . $placeholder . '}';
             
@@ -245,6 +243,23 @@ class TranscriptController extends Controller
             }
         }
         return 0;
+    }
+    
+    /**
+     * Sanitize filename by removing special characters
+     */
+    private function sanitizeFilename($filename)
+    {
+        // Remove any characters that might cause issues in filenames
+        $filename = preg_replace('/[^\w\s-]/u', '', $filename);
+        // Replace spaces with underscores
+        $filename = preg_replace('/[\s]+/', '_', $filename);
+        // Remove multiple underscores
+        $filename = preg_replace('/_+/', '_', $filename);
+        // Trim underscores from beginning and end
+        $filename = trim($filename, '_');
+        
+        return $filename;
     }
     
     /**
@@ -404,13 +419,21 @@ class TranscriptController extends Controller
         // Create a unique queue ID
         $queueId = uniqid('batch_', true);
         
-        // Store the queue in session
+        // Store the queue in session with student info
+        $studentsData = [];
+        foreach ($studentIds as $index => $regNumber) {
+            $student = Student::where('username', $regNumber)->first();
+            $studentsData[] = [
+                'id' => $index,
+                'registration_number' => $regNumber,
+                'student_name' => $student ? $student->fullname : 'Unknown Student',
+                'exists' => $student ? true : false
+            ];
+        }
+        
         $queue = [
-            'ids' => $studentIds,
-            'current_index' => 0,
-            'total' => count($studentIds),
-            'completed' => [],
-            'failed' => [],
+            'students' => $studentsData,
+            'total' => count($studentsData),
             'template' => $templateType,
             'timestamp' => now()
         ];
@@ -422,7 +445,7 @@ class TranscriptController extends Controller
     }
 
     /**
-     * Show batch list with all student IDs
+     * Show batch list with all student IDs and names
      */
     public function showBatchList($queueId, Request $request)
     {
@@ -442,12 +465,14 @@ class TranscriptController extends Controller
             Session::put("transcript_queue_{$queueId}", $queue);
         }
         
-        // Prepare student list for the view
+        // Prepare student list for the view with names pre-loaded
         $students = [];
-        foreach ($queue['ids'] as $index => $regNumber) {
+        foreach ($queue['students'] as $studentData) {
             $students[] = [
-                'id' => $index,
-                'registration_number' => $regNumber
+                'id' => $studentData['id'],
+                'registration_number' => $studentData['registration_number'],
+                'student_name' => $studentData['student_name'],
+                'exists' => $studentData['exists']
             ];
         }
         
@@ -461,6 +486,7 @@ class TranscriptController extends Controller
 
     /**
      * Download a single transcript from batch
+     * This saves the file with student name only
      */
     public function downloadBatchTranscript($queueId, $studentId, Request $request)
     {
@@ -472,7 +498,21 @@ class TranscriptController extends Controller
         
         // Get template from URL parameter or from queue
         $templateType = $request->get('template', $queue['template']);
-        $regNumber = $queue['ids'][$studentId];
+        
+        // Find the student data in the queue
+        $studentData = null;
+        foreach ($queue['students'] as $student) {
+            if ($student['id'] == $studentId) {
+                $studentData = $student;
+                break;
+            }
+        }
+        
+        if (!$studentData) {
+            return response()->json(['error' => 'Student not found in batch'], 404);
+        }
+        
+        $regNumber = $studentData['registration_number'];
         
         try {
             // Clean the registration number
@@ -522,7 +562,7 @@ class TranscriptController extends Controller
             $averageGrade = $totalGrades > 0 ? round($sumGrades / $totalGrades, 2) : 'N/A';
             $classification = $this->getClassification($averageGrade);
             
-            $studentData = [
+            $studentDataArray = [
                 'student_name' => $student->fullname,
                 'reg_number' => $student->username,
                 'program' => $this->getProgramName($student->majorid),
@@ -532,17 +572,23 @@ class TranscriptController extends Controller
                 'classification' => $classification,
             ];
             
-            $templateData = array_merge($studentData, $gradeData);
+            $templateData = array_merge($studentDataArray, $gradeData);
             
-            // Generate file based on template type
+            // Generate file based on template type (saved with student name only)
             if ($templateType === 'excel') {
-                $filePath = $this->generateExcelTranscript($templateData, $student->username);
+                $filePath = $this->generateExcelTranscript($templateData, $student->fullname);
+                $fileExtension = 'xlsx';
             } else {
-                $filePath = $this->generateWordTranscript($templateData, $student->username);
+                $filePath = $this->generateWordTranscript($templateData, $student->fullname);
+                $fileExtension = 'docx';
             }
             
-            // Return file download
-            return response()->download($filePath, basename($filePath))->deleteFileAfterSend(true);
+            // Create filename with student name only (no registration number)
+            $sanitizedName = $this->sanitizeFilename($student->fullname);
+            $fileName = $sanitizedName . '.' . $fileExtension;
+            
+            // Return file download with proper filename
+            return response()->download($filePath, $fileName)->deleteFileAfterSend(true);
             
         } catch (\Exception $e) {
             Log::error("Batch download failed for {$regNumber}: " . $e->getMessage());
@@ -563,12 +609,8 @@ class TranscriptController extends Controller
         
         return response()->json([
             'total' => $queue['total'],
-            'completed' => count($queue['completed']),
-            'failed' => count($queue['failed']),
-            'current_index' => $queue['current_index'],
-            'remaining' => $queue['total'] - $queue['current_index'],
-            'completed_list' => $queue['completed'],
-            'failed_list' => $queue['failed']
+            'template' => $queue['template'],
+            'timestamp' => $queue['timestamp']
         ]);
     }
 }

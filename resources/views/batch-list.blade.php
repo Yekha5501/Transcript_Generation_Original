@@ -146,41 +146,206 @@
         </div>
     </div>
 
-    <script>
-        // Store student data and download states
-        const students = @json($students);
-        const queueId = '{{ $queueId }}';
-        let currentTemplate = '{{ $template }}';
-        
-        let downloadedCount = 0;
-        let downloading = false;
-        let downloadedStudents = new Set();
+   <script>
+    // Store student data and download states
+    const students = @json($students);
+    const queueId = '{{ $queueId }}';
+    let currentTemplate = '{{ $template }}';
+    
+    let downloadedCount = 0;
+    let downloading = false;
+    let downloadedStudents = new Set();
 
-        // Track downloaded status from localStorage
-        function loadDownloadedStatus() {
-            const saved = localStorage.getItem(`batch_${queueId}_downloaded`);
-            if (saved) {
-                const downloadedIds = JSON.parse(saved);
-                downloadedIds.forEach(id => {
-                    downloadedStudents.add(id);
-                    updateButtonToDownloaded(id);
-                });
-                downloadedCount = downloadedStudents.size;
-                updateStats();
+    // Track downloaded status from localStorage
+    function loadDownloadedStatus() {
+        const saved = localStorage.getItem(`batch_${queueId}_downloaded`);
+        if (saved) {
+            const downloadedIds = JSON.parse(saved);
+            downloadedIds.forEach(id => {
+                downloadedStudents.add(id);
+                updateButtonToDownloaded(id);
+            });
+            downloadedCount = downloadedStudents.size;
+            updateStats();
+        }
+    }
+
+    // Save downloaded status to localStorage
+    function saveDownloadedStatus() {
+        localStorage.setItem(`batch_${queueId}_downloaded`, JSON.stringify([...downloadedStudents]));
+    }
+
+    // Update button to show downloaded state
+    function updateButtonToDownloaded(studentId) {
+        const button = document.getElementById(`btn-${studentId}`);
+        const statusSpan = document.getElementById(`status-${studentId}`);
+        
+        if (button && !button.disabled) {
+            statusSpan.innerHTML = '<span class="px-2 py-1 text-xs rounded-full bg-green-100 text-green-600">Downloaded</span>';
+            button.innerHTML = `
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
+                Done
+            `;
+            button.classList.remove('bg-indigo-600', 'hover:bg-indigo-700');
+            button.classList.add('bg-green-600');
+            button.disabled = true;
+        }
+    }
+
+    // Sanitize filename (remove special characters, replace spaces with underscores)
+    function sanitizeFilename(filename) {
+        if (!filename) return 'transcript';
+        // Remove any characters that might cause issues in filenames
+        let sanitized = filename.replace(/[^\w\s-]/g, '');
+        // Replace spaces with underscores
+        sanitized = sanitized.replace(/[\s]+/g, '_');
+        // Remove multiple underscores
+        sanitized = sanitized.replace(/_+/g, '_');
+        // Trim underscores from beginning and end
+        sanitized = sanitized.replace(/^_+|_+$/g, '');
+        return sanitized;
+    }
+
+    // Switch template
+    function switchTemplate(template) {
+        if (template === currentTemplate) return;
+        currentTemplate = template;
+        document.getElementById('current-template-display').innerText = template === 'excel' ? 'Excel' : 'Word';
+        
+        // Update button styles
+        const wordBtn = document.getElementById('switch-word');
+        const excelBtn = document.getElementById('switch-excel');
+        
+        if (template === 'word') {
+            wordBtn.classList.add('bg-white', 'text-indigo-700');
+            wordBtn.classList.remove('text-white', 'hover:bg-white/20');
+            excelBtn.classList.remove('bg-white', 'text-indigo-700');
+            excelBtn.classList.add('text-white', 'hover:bg-white/20');
+        } else {
+            excelBtn.classList.add('bg-white', 'text-indigo-700');
+            excelBtn.classList.remove('text-white', 'hover:bg-white/20');
+            wordBtn.classList.remove('bg-white', 'text-indigo-700');
+            wordBtn.classList.add('text-white', 'hover:bg-white/20');
+        }
+        
+        showNotification(`Switched to ${template === 'excel' ? 'Excel' : 'Word'} template.`, 'info');
+    }
+
+    // Show notification
+    function showNotification(message, type = 'info') {
+        const colors = {
+            info: 'bg-blue-500',
+            success: 'bg-green-500',
+            error: 'bg-red-500',
+            warning: 'bg-yellow-500'
+        };
+        
+        const notification = document.createElement('div');
+        notification.className = `fixed bottom-4 right-4 ${colors[type]} text-white px-6 py-3 rounded-lg shadow-lg z-50 transition-opacity duration-300`;
+        notification.innerHTML = message;
+        document.body.appendChild(notification);
+        
+        setTimeout(() => {
+            notification.style.opacity = '0';
+            setTimeout(() => notification.remove(), 300);
+        }, 3000);
+    }
+
+    // Fetch student names and update table
+    async function loadStudentNames() {
+        for (const student of students) {
+            try {
+                const response = await fetch(`/transcript/preview/${encodeURIComponent(student.registration_number)}`);
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data.student && data.student.fullname) {
+                        document.getElementById(`name-${student.id}`).innerHTML = 
+                            `<span class="font-medium text-gray-800">${escapeHtml(data.student.fullname)}</span>`;
+                        // Store the student name as a data attribute for easy access
+                        document.getElementById(`row-${student.id}`)?.setAttribute('data-student-name', data.student.fullname);
+                    } else {
+                        document.getElementById(`name-${student.id}`).innerHTML = 
+                            `<span class="text-red-400">Student not found</span>`;
+                        document.getElementById(`row-${student.id}`)?.setAttribute('data-student-name', 'Student_Not_Found');
+                    }
+                } else {
+                    document.getElementById(`name-${student.id}`).innerHTML = 
+                        `<span class="text-red-400">Not found</span>`;
+                    document.getElementById(`row-${student.id}`)?.setAttribute('data-student-name', 'Student_Not_Found');
+                }
+            } catch (error) {
+                console.error(`Failed to load name for ${student.registration_number}`);
+                document.getElementById(`name-${student.id}`).innerHTML = 
+                    `<span class="text-red-400">Error loading</span>`;
+                document.getElementById(`row-${student.id}`)?.setAttribute('data-student-name', 'Student_Error');
             }
         }
+    }
 
-        // Save downloaded status to localStorage
-        function saveDownloadedStatus() {
-            localStorage.setItem(`batch_${queueId}_downloaded`, JSON.stringify([...downloadedStudents]));
+    // Get student name from the DOM
+    function getStudentName(studentId) {
+        const nameSpan = document.getElementById(`name-${studentId}`);
+        if (nameSpan) {
+            let name = nameSpan.innerText.trim();
+            // Remove any status indicators or extra text
+            name = name.replace('Student not found', '').replace('Not found', '').replace('Error loading', '').trim();
+            if (name && name !== 'Loading...' && name !== 'Student not found' && name !== 'Not found' && name !== 'Error loading') {
+                return name;
+            }
         }
+        // Fallback: try to get from data attribute
+        const row = document.getElementById(`row-${studentId}`);
+        if (row && row.getAttribute('data-student-name')) {
+            return row.getAttribute('data-student-name');
+        }
+        return 'Student';
+    }
 
-        // Update button to show downloaded state
-        function updateButtonToDownloaded(studentId) {
-            const button = document.getElementById(`btn-${studentId}`);
-            const statusSpan = document.getElementById(`status-${studentId}`);
+    // Download a single transcript
+    async function downloadTranscript(studentId, regNumber) {
+        const button = document.getElementById(`btn-${studentId}`);
+        const statusSpan = document.getElementById(`status-${studentId}`);
+        
+        if (button.disabled && downloadedStudents.has(studentId)) {
+            showNotification('Already downloaded! Use Reset All to download again.', 'warning');
+            return;
+        }
+        
+        if (button.disabled) return;
+        
+        // Get student name for filename
+        const studentName = getStudentName(studentId);
+        const sanitizedStudentName = sanitizeFilename(studentName);
+        
+        // Disable button and show loading
+        button.disabled = true;
+        button.innerHTML = `
+            <svg class="w-4 h-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            Generating...
+        `;
+        statusSpan.innerHTML = '<span class="px-2 py-1 text-xs rounded-full bg-yellow-100 text-yellow-600">Generating...</span>';
+        
+        try {
+            const url = `/transcript/batch/download/${queueId}/${studentId}?template=${currentTemplate}`;
+            const response = await fetch(url);
             
-            if (button && !button.disabled) {
+            if (response.ok) {
+                // Get the blob from response
+                const blob = await response.blob();
+                const downloadUrl = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = downloadUrl;
+                // Use student name ONLY for the filename (no registration number)
+                a.download = `${sanitizedStudentName}.${currentTemplate === 'excel' ? 'xlsx' : 'docx'}`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                window.URL.revokeObjectURL(downloadUrl);
+                
+                // Update status
                 statusSpan.innerHTML = '<span class="px-2 py-1 text-xs rounded-full bg-green-100 text-green-600">Downloaded</span>';
                 button.innerHTML = `
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
@@ -188,278 +353,155 @@
                 `;
                 button.classList.remove('bg-indigo-600', 'hover:bg-indigo-700');
                 button.classList.add('bg-green-600');
-                button.disabled = true;
-            }
-        }
-
-        // Switch template
-        function switchTemplate(template) {
-            if (template === currentTemplate) return;
-            currentTemplate = template;
-            document.getElementById('current-template-display').innerText = template === 'excel' ? 'Excel' : 'Word';
-            
-            // Update button styles
-            const wordBtn = document.getElementById('switch-word');
-            const excelBtn = document.getElementById('switch-excel');
-            
-            if (template === 'word') {
-                wordBtn.classList.add('bg-white', 'text-indigo-700');
-                wordBtn.classList.remove('text-white', 'hover:bg-white/20');
-                excelBtn.classList.remove('bg-white', 'text-indigo-700');
-                excelBtn.classList.add('text-white', 'hover:bg-white/20');
-            } else {
-                excelBtn.classList.add('bg-white', 'text-indigo-700');
-                excelBtn.classList.remove('text-white', 'hover:bg-white/20');
-                wordBtn.classList.remove('bg-white', 'text-indigo-700');
-                wordBtn.classList.add('text-white', 'hover:bg-white/20');
-            }
-            
-            // Show notification
-            showNotification(`Switched to ${template === 'excel' ? 'Excel' : 'Word'} template. Use download buttons to generate.`);
-        }
-
-        // Show notification
-        function showNotification(message, type = 'info') {
-            const colors = {
-                info: 'bg-blue-500',
-                success: 'bg-green-500',
-                error: 'bg-red-500',
-                warning: 'bg-yellow-500'
-            };
-            
-            const notification = document.createElement('div');
-            notification.className = `fixed bottom-4 right-4 ${colors[type]} text-white px-6 py-3 rounded-lg shadow-lg z-50 transition-opacity duration-300`;
-            notification.innerHTML = message;
-            document.body.appendChild(notification);
-            
-            setTimeout(() => {
-                notification.style.opacity = '0';
-                setTimeout(() => notification.remove(), 300);
-            }, 3000);
-        }
-
-        // Fetch student names and update table
-        async function loadStudentNames() {
-            for (const student of students) {
-                try {
-                    const response = await fetch(`/transcript/preview/${encodeURIComponent(student.registration_number)}`);
-                    if (response.ok) {
-                        const data = await response.json();
-                        if (data.student && data.student.fullname) {
-                            document.getElementById(`name-${student.id}`).innerHTML = 
-                                `<span class="font-medium text-gray-800">${escapeHtml(data.student.fullname)}</span>`;
-                        } else {
-                            document.getElementById(`name-${student.id}`).innerHTML = 
-                                `<span class="text-red-400">Student not found</span>`;
-                        }
-                    } else {
-                        document.getElementById(`name-${student.id}`).innerHTML = 
-                            `<span class="text-red-400">Not found</span>`;
-                    }
-                } catch (error) {
-                    console.error(`Failed to load name for ${student.registration_number}`);
-                    document.getElementById(`name-${student.id}`).innerHTML = 
-                        `<span class="text-red-400">Error loading</span>`;
-                }
-            }
-        }
-
-        // Download a single transcript
-        async function downloadTranscript(studentId, regNumber) {
-            const button = document.getElementById(`btn-${studentId}`);
-            const statusSpan = document.getElementById(`status-${studentId}`);
-            
-            if (button.disabled && downloadedStudents.has(studentId)) {
-                showNotification('Already downloaded! Use Reset All to download again.', 'warning');
-                return;
-            }
-            
-            if (button.disabled) return;
-            
-            // Disable button and show loading
-            button.disabled = true;
-            button.innerHTML = `
-                <svg class="w-4 h-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                </svg>
-                Generating...
-            `;
-            statusSpan.innerHTML = '<span class="px-2 py-1 text-xs rounded-full bg-yellow-100 text-yellow-600">Generating...</span>';
-            
-            try {
-                const url = `/transcript/batch/download/${queueId}/${studentId}?template=${currentTemplate}`;
-                const response = await fetch(url);
                 
-                if (response.ok) {
-                    // Get the blob from response
-                    const blob = await response.blob();
-                    const downloadUrl = window.URL.createObjectURL(blob);
-                    const a = document.createElement('a');
-                    a.href = downloadUrl;
-                    a.download = `Transcript_${regNumber}.${currentTemplate === 'excel' ? 'xlsx' : 'docx'}`;
-                    document.body.appendChild(a);
-                    a.click();
-                    document.body.removeChild(a);
-                    window.URL.revokeObjectURL(downloadUrl);
-                    
-                    // Update status
-                    statusSpan.innerHTML = '<span class="px-2 py-1 text-xs rounded-full bg-green-100 text-green-600">Downloaded</span>';
-                    button.innerHTML = `
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
-                        Done
-                    `;
-                    button.classList.remove('bg-indigo-600', 'hover:bg-indigo-700');
-                    button.classList.add('bg-green-600');
-                    
-                    downloadedStudents.add(studentId);
-                    downloadedCount = downloadedStudents.size;
-                    saveDownloadedStatus();
-                    updateStats();
-                    showNotification(`Downloaded transcript for ${regNumber}`, 'success');
-                } else {
-                    const error = await response.json();
-                    throw new Error(error.error || 'Download failed');
-                }
-            } catch (error) {
-                console.error('Download failed:', error);
-                statusSpan.innerHTML = '<span class="px-2 py-1 text-xs rounded-full bg-red-100 text-red-600">Failed</span>';
-                button.innerHTML = `
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
-                    Retry
-                `;
-                button.disabled = false;
-                button.classList.remove('bg-indigo-600');
-                button.classList.add('bg-red-600');
-                showNotification(`Failed to download ${regNumber}: ${error.message}`, 'error');
-            }
-        }
-
-        // Download all transcripts in sequence
-        async function downloadAll() {
-            if (downloading) {
-                showNotification('Download already in progress!', 'warning');
-                return;
-            }
-            
-            downloading = true;
-            showNotification('Starting batch download...', 'info');
-            
-            for (const student of students) {
-                if (!downloadedStudents.has(student.id)) {
-                    await downloadTranscript(student.id, student.registration_number);
-                    // Wait between downloads
-                    await new Promise(resolve => setTimeout(resolve, 1500));
-                }
-            }
-            
-            downloading = false;
-            if (downloadedStudents.size === students.length) {
-                showNotification('All transcripts downloaded successfully!', 'success');
-            }
-        }
-
-        // Download only pending transcripts
-        async function downloadPending() {
-            if (downloading) {
-                showNotification('Download already in progress!', 'warning');
-                return;
-            }
-            
-            downloading = true;
-            const pending = students.filter(s => !downloadedStudents.has(s.id));
-            
-            if (pending.length === 0) {
-                showNotification('No pending downloads!', 'info');
-                downloading = false;
-                return;
-            }
-            
-            showNotification(`Downloading ${pending.length} pending transcript(s)...`, 'info');
-            
-            for (const student of pending) {
-                await downloadTranscript(student.id, student.registration_number);
-                await new Promise(resolve => setTimeout(resolve, 1000));
-            }
-            
-            downloading = false;
-            showNotification('Pending downloads completed!', 'success');
-        }
-
-        // Reset all download states
-        function resetDownloads() {
-            if (confirm('Reset all download statuses? This will allow you to download transcripts again.')) {
-                localStorage.removeItem(`batch_${queueId}_downloaded`);
-                downloadedStudents.clear();
-                downloadedCount = 0;
-                
-                // Reset all buttons
-                students.forEach(student => {
-                    const button = document.getElementById(`btn-${student.id}`);
-                    const statusSpan = document.getElementById(`status-${student.id}`);
-                    
-                    if (button) {
-                        button.disabled = false;
-                        button.innerHTML = `
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
-                            Download
-                        `;
-                        button.classList.remove('bg-green-600', 'bg-red-600');
-                        button.classList.add('bg-indigo-600', 'hover:bg-indigo-700');
-                        statusSpan.innerHTML = '<span class="px-2 py-1 text-xs rounded-full bg-gray-100 text-gray-600">Pending</span>';
-                    }
-                });
-                
+                downloadedStudents.add(studentId);
+                downloadedCount = downloadedStudents.size;
+                saveDownloadedStatus();
                 updateStats();
-                showNotification('All download statuses have been reset!', 'success');
+                showNotification(`Downloaded transcript for ${studentName}`, 'success');
+            } else {
+                const error = await response.json();
+                throw new Error(error.error || 'Download failed');
+            }
+        } catch (error) {
+            console.error('Download failed:', error);
+            statusSpan.innerHTML = '<span class="px-2 py-1 text-xs rounded-full bg-red-100 text-red-600">Failed</span>';
+            button.innerHTML = `
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+                Retry
+            `;
+            button.disabled = false;
+            button.classList.remove('bg-indigo-600');
+            button.classList.add('bg-red-600');
+            showNotification(`Failed to download ${studentName}: ${error.message}`, 'error');
+        }
+    }
+
+    // Download all transcripts in sequence
+    async function downloadAll() {
+        if (downloading) {
+            showNotification('Download already in progress!', 'warning');
+            return;
+        }
+        
+        downloading = true;
+        showNotification('Starting batch download...', 'info');
+        
+        for (const student of students) {
+            if (!downloadedStudents.has(student.id)) {
+                await downloadTranscript(student.id, student.registration_number);
+                // Wait between downloads
+                await new Promise(resolve => setTimeout(resolve, 1500));
             }
         }
+        
+        downloading = false;
+        if (downloadedStudents.size === students.length) {
+            showNotification('All transcripts downloaded successfully!', 'success');
+        }
+    }
 
-        // Update statistics display
-        function updateStats() {
-            const remaining = students.length - downloadedCount;
-            document.getElementById('downloaded-count').innerText = downloadedCount;
-            document.getElementById('remaining-count').innerText = remaining;
+    // Download only pending transcripts
+    async function downloadPending() {
+        if (downloading) {
+            showNotification('Download already in progress!', 'warning');
+            return;
+        }
+        
+        downloading = true;
+        const pending = students.filter(s => !downloadedStudents.has(s.id));
+        
+        if (pending.length === 0) {
+            showNotification('No pending downloads!', 'info');
+            downloading = false;
+            return;
+        }
+        
+        showNotification(`Downloading ${pending.length} pending transcript(s)...`, 'info');
+        
+        for (const student of pending) {
+            await downloadTranscript(student.id, student.registration_number);
+            await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+        
+        downloading = false;
+        showNotification('Pending downloads completed!', 'success');
+    }
+
+    // Reset all download states
+    function resetDownloads() {
+        if (confirm('Reset all download statuses? This will allow you to download transcripts again.')) {
+            localStorage.removeItem(`batch_${queueId}_downloaded`);
+            downloadedStudents.clear();
+            downloadedCount = 0;
             
-            if (downloadedCount === students.length && students.length > 0) {
-                // Show completion message if not already shown
-                if (!document.querySelector('.completion-message')) {
-                    const tableBody = document.getElementById('student-table-body');
-                    const completionMsg = document.createElement('div');
-                    completionMsg.className = 'completion-message bg-green-50 border-l-4 border-green-500 p-4 m-4 rounded';
-                    completionMsg.innerHTML = `
-                        <div class="flex items-center">
-                            <div class="flex-shrink-0">
-                                <svg class="h-5 w-5 text-green-400" fill="currentColor" viewBox="0 0 20 20">
-                                    <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/>
-                                </svg>
-                            </div>
-                            <div class="ml-3">
-                                <p class="text-sm text-green-700">All transcripts have been downloaded successfully!</p>
-                            </div>
-                        </div>
+            // Reset all buttons
+            students.forEach(student => {
+                const button = document.getElementById(`btn-${student.id}`);
+                const statusSpan = document.getElementById(`status-${student.id}`);
+                
+                if (button) {
+                    button.disabled = false;
+                    button.innerHTML = `
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                        Download
                     `;
-                    if (tableBody && tableBody.parentNode) {
-                        tableBody.parentNode.insertBefore(completionMsg, tableBody);
-                    }
+                    button.classList.remove('bg-green-600', 'bg-red-600');
+                    button.classList.add('bg-indigo-600', 'hover:bg-indigo-700');
+                    statusSpan.innerHTML = '<span class="px-2 py-1 text-xs rounded-full bg-gray-100 text-gray-600">Pending</span>';
+                }
+            });
+            
+            updateStats();
+            showNotification('All download statuses have been reset!', 'success');
+        }
+    }
+
+    // Update statistics display
+    function updateStats() {
+        const remaining = students.length - downloadedCount;
+        document.getElementById('downloaded-count').innerText = downloadedCount;
+        document.getElementById('remaining-count').innerText = remaining;
+        
+        if (downloadedCount === students.length && students.length > 0) {
+            // Show completion message if not already shown
+            if (!document.querySelector('.completion-message')) {
+                const tableBody = document.getElementById('student-table-body');
+                const completionMsg = document.createElement('div');
+                completionMsg.className = 'completion-message bg-green-50 border-l-4 border-green-500 p-4 m-4 rounded';
+                completionMsg.innerHTML = `
+                    <div class="flex items-center">
+                        <div class="flex-shrink-0">
+                            <svg class="h-5 w-5 text-green-400" fill="currentColor" viewBox="0 0 20 20">
+                                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/>
+                            </svg>
+                        </div>
+                        <div class="ml-3">
+                            <p class="text-sm text-green-700">All transcripts have been downloaded successfully!</p>
+                        </div>
+                    </div>
+                `;
+                if (tableBody && tableBody.parentNode) {
+                    tableBody.parentNode.insertBefore(completionMsg, tableBody);
                 }
             }
         }
+    }
 
-        // Escape HTML helper
-        function escapeHtml(str) {
-            if (!str) return '';
-            return str.replace(/[&<>]/g, function(m) {
-                if (m === '&') return '&amp;';
-                if (m === '<') return '&lt;';
-                if (m === '>') return '&gt;';
-                return m;
-            });
-        }
+    // Escape HTML helper
+    function escapeHtml(str) {
+        if (!str) return '';
+        return str.replace(/[&<>]/g, function(m) {
+            if (m === '&') return '&amp;';
+            if (m === '<') return '&lt;';
+            if (m === '>') return '&gt;';
+            return m;
+        });
+    }
 
-        // Load student names and saved status on page load
-        loadStudentNames();
-        loadDownloadedStatus();
-    </script>
+    // Load student names and saved status on page load
+    loadStudentNames();
+    loadDownloadedStatus();
+</script>
 </body>
 </html>
