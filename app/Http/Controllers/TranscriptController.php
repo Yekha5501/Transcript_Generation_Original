@@ -102,7 +102,7 @@ class TranscriptController extends Controller
      */
     private function generateWordTranscript($templateData, $studentName)
     {
-        $templatePath = storage_path('app/templates/NMT.docx');
+        $templatePath = storage_path('app/templates/NMT_3.docx');
         
         if (!file_exists($templatePath)) {
             throw new \Exception("Word template not found at: $templatePath");
