@@ -30,6 +30,9 @@
         .animate-slide-in {
             animation: slideIn 0.3s ease-out;
         }
+        select option {
+            padding: 8px;
+        }
     </style>
 </head>
 <body class="bg-gradient-to-br from-slate-50 to-blue-50 font-sans antialiased">
@@ -75,19 +78,36 @@
                         </div>
                     @endif
 
-                    <!-- Template Selection Toggle -->
+                    <!-- Template Selection Section -->
                     <div class="bg-white rounded-xl border border-gray-200 shadow-sm p-5">
-                        <div class="flex flex-col sm:flex-row gap-4 items-center justify-between">
-                            <div class="flex gap-3">
-                                <button onclick="setTemplate('word')" id="btn-word" class="template-btn px-5 py-2.5 rounded-lg font-medium transition-all duration-200 bg-indigo-600 text-white shadow-md">
-                                    📄 Word Document
-                                </button>
-                                <button onclick="setTemplate('excel')" id="btn-excel" class="template-btn px-5 py-2.5 rounded-lg font-medium transition-all duration-200 bg-gray-200 text-gray-700 hover:bg-gray-300">
-                                    📊 Excel Spreadsheet
-                                </button>
+                        <div class="flex flex-col gap-4">
+                            <div class="flex flex-col sm:flex-row gap-4 items-center justify-between">
+                                <div class="flex gap-3">
+                                    <button onclick="setTemplate('word')" id="btn-word" class="template-btn px-5 py-2.5 rounded-lg font-medium transition-all duration-200 bg-indigo-600 text-white shadow-md">
+                                        📄 Word Document
+                                    </button>
+                                    <button onclick="setTemplate('excel')" id="btn-excel" class="template-btn px-5 py-2.5 rounded-lg font-medium transition-all duration-200 bg-gray-200 text-gray-700 hover:bg-gray-300">
+                                        📊 Excel Spreadsheet
+                                    </button>
+                                </div>
+                                <div class="text-sm text-gray-500">
+                                    Current template: <span id="selected-template" class="font-semibold text-indigo-600">Word Document</span>
+                                </div>
                             </div>
-                            <div class="text-sm text-gray-500">
-                                Current template: <span id="selected-template" class="font-semibold text-indigo-600">Word Document</span>
+                            
+                            <!-- Template File Dropdown -->
+                            <div class="flex flex-col sm:flex-row gap-3 items-center">
+                                <label for="template_file" class="text-sm font-medium text-gray-700 whitespace-nowrap">Select Template File:</label>
+                                <select id="template_file" name="template_file" class="w-full sm:w-auto px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white shadow-sm">
+                                    <!-- Word templates will be populated by JavaScript -->
+                                </select>
+                                <span id="template-file-status" class="text-xs text-gray-400">({{ count($templates['word'] ?? []) }} templates available)</span>
+                            </div>
+                            
+                            <!-- Template Info -->
+                            <div class="text-xs text-gray-500 bg-gray-50 rounded-lg p-2">
+                                <span>💡 Templates loaded from: <code class="bg-gray-200 px-1 rounded">storage/app/templates/</code></span>
+                                <span class="ml-2">| Word: {{ count($templates['word'] ?? []) }} files, Excel: {{ count($templates['excel'] ?? []) }} files</span>
                             </div>
                         </div>
                     </div>
@@ -115,6 +135,7 @@
                                            class="block w-full pl-10 pr-3 py-2.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-gray-50/30 transition-all" required>
                                 </div>
                                 <input type="hidden" id="template-type" name="template" value="word">
+                                <input type="hidden" id="template-file-hidden" name="template_file" value="">
                                 <button type="submit" class="mt-5 w-full sm:w-auto inline-flex justify-center items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700 text-white font-medium rounded-lg shadow-md hover:shadow-lg transition-all duration-200">
                                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
                                     Generate Transcript
@@ -140,6 +161,7 @@
                             <form action="{{ route('transcript.batch.queue') }}" method="POST" enctype="multipart/form-data" id="batch-form">
                                 @csrf
                                 <input type="hidden" id="batch-template-type" name="template" value="word">
+                                <input type="hidden" id="batch-template-file" name="template_file" value="">
                                 <input type="hidden" name="mode" value="sequential">
                                 
                                 <label for="file" class="block text-sm font-medium text-gray-700 mb-1.5">Upload Student List <span class="text-xs text-gray-500 font-normal">(CSV, Excel, or TXT)</span></label>
@@ -217,11 +239,49 @@
         </div>
     </div>
 
-    <script src="https://cdn.jsdelivr.net/npm/flowbite@4.0.1/dist/flowbite.min.js"></script>
-    
     <script>
+        // Template data from server
+        const templates = @json($templates);
         let currentTemplate = 'word';
-        
+        let currentTemplateFile = '';
+
+        // Initialize the template dropdown
+        function populateTemplateDropdown(type) {
+            const select = document.getElementById('template_file');
+            select.innerHTML = '';
+            
+            const templateList = templates[type] || [];
+            
+            if (templateList.length === 0) {
+                const option = document.createElement('option');
+                option.value = '';
+                option.textContent = 'No templates available';
+                option.disabled = true;
+                select.appendChild(option);
+                document.getElementById('template-file-status').textContent = '(No templates found)';
+                return;
+            }
+            
+            templateList.forEach(file => {
+                const option = document.createElement('option');
+                option.value = file;
+                option.textContent = file;
+                select.appendChild(option);
+            });
+            
+            // Select first template by default
+            if (templateList.length > 0) {
+                select.value = templateList[0];
+                currentTemplateFile = templateList[0];
+            }
+            
+            document.getElementById('template-file-status').textContent = `(${templateList.length} templates available)`;
+            
+            // Update hidden fields
+            document.getElementById('template-file-hidden').value = currentTemplateFile;
+            document.getElementById('batch-template-file').value = currentTemplateFile;
+        }
+
         function setTemplate(type) {
             currentTemplate = type;
             const wordBtn = document.getElementById('btn-word');
@@ -246,15 +306,44 @@
             
             if (templateInput) templateInput.value = type;
             if (batchTemplateInput) batchTemplateInput.value = type;
+            
+            // Update dropdown for current template type
+            populateTemplateDropdown(type);
         }
+
+        // Update hidden fields when dropdown changes
+        document.addEventListener('DOMContentLoaded', function() {
+            const select = document.getElementById('template_file');
+            select.addEventListener('change', function() {
+                currentTemplateFile = this.value;
+                document.getElementById('template-file-hidden').value = this.value;
+                document.getElementById('batch-template-file').value = this.value;
+            });
+            
+            // Initialize with word templates
+            setTemplate('word');
+        });
         
         function generateSingle() {
             const regNumber = document.getElementById('reg_number').value.trim();
+            const templateFile = document.getElementById('template_file').value;
+            
             if (!regNumber) {
                 alert('Please enter a registration number');
                 return;
             }
-            window.location.href = '/transcript/' + encodeURIComponent(regNumber) + '?template=' + currentTemplate;
+            
+            if (!templateFile) {
+                alert('Please select a template file');
+                return;
+            }
+            
+            // Build URL with both template type and file
+            const url = '/transcript/' + encodeURIComponent(regNumber) + 
+                       '?template=' + currentTemplate + 
+                       '&template_file=' + encodeURIComponent(templateFile);
+            
+            window.location.href = url;
         }
         
         async function previewGrades() {
@@ -378,7 +467,7 @@
         
         function escapeHtml(str) {
             if (!str) return '';
-            return str.replace(/[&<>]/g, function(m) {
+            return String(str).replace(/[&<>]/g, function(m) {
                 if (m === '&') return '&amp;';
                 if (m === '<') return '&lt;';
                 if (m === '>') return '&gt;';
