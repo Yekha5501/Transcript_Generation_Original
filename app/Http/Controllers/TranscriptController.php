@@ -66,10 +66,12 @@ class TranscriptController extends Controller
             $averageGrade = $totalGrades > 0 ? round($sumGrades / $totalGrades, 2) : 'N/A';
             $classification = $this->getClassification($averageGrade);
             
-            // Prepare student data
+            // Prepare student data with gender/sex
             $studentData = [
                 'student_name' => $student->fullname,
                 'reg_number' => $student->username,
+                'gender' => $this->formatGender($student->sex),
+                'sex' => $this->formatGender($student->sex), // Added both for flexibility
                 'program' => $this->getProgramName($student->majorid),
                 'generation_date' => now()->format('F d, Y'),
                 'total_courses' => $totalGrades,
@@ -98,11 +100,32 @@ class TranscriptController extends Controller
     }
     
     /**
+     * Format gender/sex value
+     */
+    private function formatGender($sex)
+    {
+        if (empty($sex)) {
+            return 'Not Specified';
+        }
+        
+        $sex = strtolower(trim($sex));
+        
+        // Handle various possible values
+        if ($sex === 'm' || $sex === 'male' || $sex === 'M' || $sex === 'Male') {
+            return 'Male';
+        } elseif ($sex === 'f' || $sex === 'female' || $sex === 'F' || $sex === 'Female') {
+            return 'Female';
+        } else {
+            return ucfirst($sex); // Return as-is if other value
+        }
+    }
+    
+    /**
      * Generate Word transcript
      */
     private function generateWordTranscript($templateData, $studentName)
     {
-        $templatePath = storage_path('app/templates/NMT_3.docx');
+        $templatePath = storage_path('app/templates/DCM.docx');
         
         if (!file_exists($templatePath)) {
             throw new \Exception("Word template not found at: $templatePath");
@@ -137,7 +160,7 @@ class TranscriptController extends Controller
      */
     private function generateExcelTranscript($templateData, $studentName)
     {
-        $templatePath = storage_path('app/templates/BSNM 6.xlsx');
+        $templatePath = storage_path('app/templates/BSNM 2025.xlsx');
         
         // Check if Excel template exists
         if (!file_exists($templatePath)) {
@@ -373,6 +396,7 @@ class TranscriptController extends Controller
             'student' => [
                 'username' => $student->username,
                 'fullname' => $student->fullname,
+                'gender' => $this->formatGender($student->sex),
                 'program' => $this->getProgramName($student->majorid),
             ],
             'grades' => $gradeList,
@@ -427,6 +451,7 @@ class TranscriptController extends Controller
                 'id' => $index,
                 'registration_number' => $regNumber,
                 'student_name' => $student ? $student->fullname : 'Unknown Student',
+                'gender' => $student ? $this->formatGender($student->sex) : 'Not Specified',
                 'exists' => $student ? true : false
             ];
         }
@@ -472,6 +497,7 @@ class TranscriptController extends Controller
                 'id' => $studentData['id'],
                 'registration_number' => $studentData['registration_number'],
                 'student_name' => $studentData['student_name'],
+                'gender' => $studentData['gender'] ?? 'Not Specified',
                 'exists' => $studentData['exists']
             ];
         }
@@ -565,6 +591,8 @@ class TranscriptController extends Controller
             $studentDataArray = [
                 'student_name' => $student->fullname,
                 'reg_number' => $student->username,
+                'gender' => $this->formatGender($student->sex),
+                'sex' => $this->formatGender($student->sex), // Added both for flexibility
                 'program' => $this->getProgramName($student->majorid),
                 'generation_date' => now()->format('F d, Y'),
                 'total_courses' => $totalGrades,
