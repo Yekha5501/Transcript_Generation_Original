@@ -11,17 +11,85 @@ use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Session;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\File;
 
 class TranscriptController extends Controller
 {
+
+     public function index()
+    {
+        $templates = $this->getAvailableTemplates();
+        return view('welcome', compact('templates'));
+    }
+
+
+
+    /**
+     * Get all available template files from storage/app/templates
+     */
+    private function getAvailableTemplates()
+    {
+        $templatePath = storage_path('app/templates');
+        
+        if (!File::exists($templatePath)) {
+            File::makeDirectory($templatePath, 0755, true);
+        }
+        
+        $templates = [
+            'word' => [],
+            'excel' => []
+        ];
+        
+        // Get all files from templates directory
+        $files = File::files($templatePath);
+        
+        foreach ($files as $file) {
+            $filename = $file->getFilename();
+            $extension = strtolower($file->getExtension());
+            
+            // Categorize by extension
+            if (in_array($extension, ['docx', 'doc'])) {
+                $templates['word'][] = $filename;
+            } elseif (in_array($extension, ['xlsx', 'xls'])) {
+                $templates['excel'][] = $filename;
+            }
+        }
+        
+        // Sort alphabetically
+        sort($templates['word']);
+        sort($templates['excel']);
+        
+        return $templates;
+    }
+
+    /**
+     * Show the transcript generator view
+     */
+   
+
+    /**
+     * Get available templates API endpoint (for AJAX)
+     */
+    public function getTemplates()
+    {
+        return response()->json($this->getAvailableTemplates());
+    }
+
     /**
      * Generate transcript for a single student
      */
     public function generate(Request $request, $regNumber)
     {
         try {
-            // Get template type from request (word or excel)
+            // Get template type and specific template file from request
             $templateType = $request->get('template', 'word');
+            $templateFile = $request->get('template_file', null);
+            
+            // If template_file is not provided, use the first available template of that type
+            if (empty($templateFile)) {
+                $available = $this->getAvailableTemplates();
+                $templateFile = $available[$templateType][0] ?? $this->getDefaultTemplate($templateType);
+            }
             
             // Find student using username from people table
             $student = Student::where('username', $regNumber)->firstOrFail();
@@ -71,7 +139,7 @@ class TranscriptController extends Controller
                 'student_name' => $student->fullname,
                 'reg_number' => $student->username,
                 'gender' => $this->formatGender($student->sex),
-                'sex' => $this->formatGender($student->sex), // Added both for flexibility
+                'sex' => $this->formatGender($student->sex),
                 'program' => $this->getProgramName($student->majorid),
                 'generation_date' => now()->format('F d, Y'),
                 'total_courses' => $totalGrades,
@@ -82,13 +150,13 @@ class TranscriptController extends Controller
             // Merge grade data with student data
             $templateData = array_merge($studentData, $gradeData);
             
-            // Generate based on template type
+            // Generate based on template type with selected template file
             if ($templateType === 'excel') {
-                $filePath = $this->generateExcelTranscript($templateData, $student->fullname);
+                $filePath = $this->generateExcelTranscript($templateData, $student->fullname, $templateFile);
                 $fileName = basename($filePath);
                 return response()->download($filePath, $fileName)->deleteFileAfterSend(true);
             } else {
-                $filePath = $this->generateWordTranscript($templateData, $student->fullname);
+                $filePath = $this->generateWordTranscript($templateData, $student->fullname, $templateFile);
                 $fileName = basename($filePath);
                 return response()->download($filePath, $fileName)->deleteFileAfterSend(true);
             }
@@ -97,6 +165,21 @@ class TranscriptController extends Controller
             Log::error("Transcript generation failed for {$regNumber}: " . $e->getMessage());
             return back()->with('error', 'Failed to generate transcript: ' . $e->getMessage());
         }
+    }
+    
+    /**
+     * Get default template file based on type
+     */
+    private function getDefaultTemplate($type)
+    {
+        $available = $this->getAvailableTemplates();
+        
+        // If no templates found, return a fallback
+        if (empty($available[$type])) {
+            return $type === 'word' ? 'default.docx' : 'default.xlsx';
+        }
+        
+        return $available[$type][0];
     }
     
     /**
@@ -110,22 +193,21 @@ class TranscriptController extends Controller
         
         $sex = strtolower(trim($sex));
         
-        // Handle various possible values
         if ($sex === 'm' || $sex === 'male' || $sex === 'M' || $sex === 'Male') {
             return 'Male';
         } elseif ($sex === 'f' || $sex === 'female' || $sex === 'F' || $sex === 'Female') {
             return 'Female';
         } else {
-            return ucfirst($sex); // Return as-is if other value
+            return ucfirst($sex);
         }
     }
     
     /**
      * Generate Word transcript
      */
-    private function generateWordTranscript($templateData, $studentName)
+    private function generateWordTranscript($templateData, $studentName, $templateFile)
     {
-        $templatePath = storage_path('app/templates/DCM.docx');
+        $templatePath = storage_path("app/templates/{$templateFile}");
         
         if (!file_exists($templatePath)) {
             throw new \Exception("Word template not found at: $templatePath");
@@ -138,10 +220,8 @@ class TranscriptController extends Controller
             $templateProcessor->setValue($placeholder, $value);
         }
         
-        // Sanitize filename (remove special characters) - use only student name
+        // Sanitize filename
         $sanitizedName = $this->sanitizeFilename($studentName);
-        
-        // Save the generated transcript with student name only
         $fileName = $sanitizedName . '.docx';
         $filePath = storage_path("app/transcripts/{$fileName}");
         
@@ -158,11 +238,10 @@ class TranscriptController extends Controller
     /**
      * Generate Excel transcript using the template file
      */
-    private function generateExcelTranscript($templateData, $studentName)
+    private function generateExcelTranscript($templateData, $studentName, $templateFile)
     {
-        $templatePath = storage_path('app/templates/BSNM 2025.xlsx');
+        $templatePath = storage_path("app/templates/{$templateFile}");
         
-        // Check if Excel template exists
         if (!file_exists($templatePath)) {
             throw new \Exception("Excel template not found at: $templatePath");
         }
@@ -171,18 +250,15 @@ class TranscriptController extends Controller
         $spreadsheet = IOFactory::load($templatePath);
         $sheet = $spreadsheet->getActiveSheet();
         
-        // Replace placeholders in Excel - iterate through all template data
+        // Replace placeholders
         foreach ($templateData as $placeholder => $value) {
             $this->replaceExcelPlaceholderRecursive($sheet, $placeholder, $value);
         }
         
-        // Also try direct cell replacement for common placeholders
         $this->replaceExcelPlaceholderDirect($sheet, $templateData);
         
-        // Sanitize filename (remove special characters) - use only student name
+        // Sanitize filename
         $sanitizedName = $this->sanitizeFilename($studentName);
-        
-        // Save the generated transcript with student name only
         $fileName = $sanitizedName . '.xlsx';
         $filePath = storage_path("app/transcripts/{$fileName}");
         
@@ -198,13 +274,12 @@ class TranscriptController extends Controller
     }
     
     /**
-     * Replace placeholders in Excel sheet recursively through all cells
+     * Replace placeholders in Excel sheet recursively
      */
     private function replaceExcelPlaceholderRecursive($sheet, $placeholder, $value)
     {
         $search = '${' . $placeholder . '}';
         
-        // Get all used cells
         $highestRow = $sheet->getHighestRow();
         $highestColumn = $sheet->getHighestColumn();
         
@@ -222,14 +297,13 @@ class TranscriptController extends Controller
     }
     
     /**
-     * Direct replacement for specific cells (faster for known placeholders)
+     * Direct replacement for specific cells
      */
     private function replaceExcelPlaceholderDirect($sheet, $templateData)
     {
         foreach ($templateData as $placeholder => $value) {
             $search = '${' . $placeholder . '}';
             
-            // Search entire sheet for this specific placeholder
             $highestRow = $sheet->getHighestRow();
             $highestColumn = $sheet->getHighestColumn();
             
@@ -273,13 +347,9 @@ class TranscriptController extends Controller
      */
     private function sanitizeFilename($filename)
     {
-        // Remove any characters that might cause issues in filenames
         $filename = preg_replace('/[^\w\s-]/u', '', $filename);
-        // Replace spaces with underscores
         $filename = preg_replace('/[\s]+/', '_', $filename);
-        // Remove multiple underscores
         $filename = preg_replace('/_+/', '_', $filename);
-        // Trim underscores from beginning and end
         $filename = trim($filename, '_');
         
         return $filename;
@@ -311,7 +381,7 @@ class TranscriptController extends Controller
                     $studentIds[] = $id;
                 }
             }
-        } elseif ($extension === 'xlsx') {
+        } elseif ($extension === 'xlsx' || $extension === 'xls') {
             $spreadsheet = IOFactory::load($file->getPathname());
             $sheet = $spreadsheet->getActiveSheet();
             $rows = $sheet->toArray();
@@ -363,7 +433,6 @@ class TranscriptController extends Controller
             return response()->json(['error' => 'Student not found'], 404);
         }
         
-        // Get grades with highest grade per course
         $grades = Registration::where('studentid', $regNumber)
             ->whereNotNull('grade')
             ->where('grade', '!=', '')
@@ -373,7 +442,6 @@ class TranscriptController extends Controller
             ->with('course')
             ->get();
         
-        // Calculate statistics
         $totalGrades = 0;
         $sumGrades = 0;
         $gradeList = [];
@@ -415,35 +483,35 @@ class TranscriptController extends Controller
             'file' => 'required|file|mimes:csv,txt,xlsx,xls'
         ]);
         
-        // Parse student IDs from uploaded file
         $studentIds = $this->parseStudentIds($request->file('file'));
         
-        // Clean all IDs - Remove BOM, invisible chars, trim
         $studentIds = array_map(function($id) {
             $id = preg_replace('/[\x00-\x1F\x7F-\x9F]/u', '', $id);
             $id = preg_replace('/^[\pZ\pC]+|[\pZ\pC]+$/u', '', $id);
             return trim($id);
         }, $studentIds);
         
-        // Remove empty values
         $studentIds = array_filter($studentIds, function($id) {
             return !empty($id);
         });
         
-        // Re-index array
         $studentIds = array_values($studentIds);
         
         if (empty($studentIds)) {
             return back()->with('error', 'No valid student IDs found in the file.');
         }
         
-        // Get template type from request
         $templateType = $request->input('template', 'word');
+        $templateFile = $request->input('template_file', null);
         
-        // Create a unique queue ID
+        // If no template file specified, use the first available
+        if (empty($templateFile)) {
+            $available = $this->getAvailableTemplates();
+            $templateFile = $available[$templateType][0] ?? null;
+        }
+        
         $queueId = uniqid('batch_', true);
         
-        // Store the queue in session with student info
         $studentsData = [];
         foreach ($studentIds as $index => $regNumber) {
             $student = Student::where('username', $regNumber)->first();
@@ -460,6 +528,7 @@ class TranscriptController extends Controller
             'students' => $studentsData,
             'total' => count($studentsData),
             'template' => $templateType,
+            'template_file' => $templateFile,
             'timestamp' => now()
         ];
         
@@ -481,16 +550,22 @@ class TranscriptController extends Controller
                 ->with('error', 'Batch session expired. Please upload the file again.');
         }
         
-        // Get template from URL parameter or from queue
         $template = $request->get('template', $queue['template']);
+        $templateFile = $request->get('template_file', $queue['template_file'] ?? null);
         
-        // Update queue template if changed
-        if ($queue['template'] !== $template) {
+        // If no template file specified, use the first available
+        if (empty($templateFile)) {
+            $available = $this->getAvailableTemplates();
+            $templateFile = $available[$template][0] ?? null;
+        }
+        
+        // Update queue with current template settings
+        if ($queue['template'] !== $template || $queue['template_file'] !== $templateFile) {
             $queue['template'] = $template;
+            $queue['template_file'] = $templateFile;
             Session::put("transcript_queue_{$queueId}", $queue);
         }
         
-        // Prepare student list for the view with names pre-loaded
         $students = [];
         foreach ($queue['students'] as $studentData) {
             $students[] = [
@@ -502,17 +577,21 @@ class TranscriptController extends Controller
             ];
         }
         
+        // Get available templates for the dropdown
+        $templates = $this->getAvailableTemplates();
+        
         return view('batch-list', [
             'students' => $students,
             'total' => count($students),
             'queueId' => $queueId,
-            'template' => $template
+            'template' => $template,
+            'template_file' => $templateFile,
+            'templates' => $templates
         ]);
     }
 
     /**
      * Download a single transcript from batch
-     * This saves the file with student name only
      */
     public function downloadBatchTranscript($queueId, $studentId, Request $request)
     {
@@ -522,10 +601,19 @@ class TranscriptController extends Controller
             return response()->json(['error' => 'Batch session expired'], 404);
         }
         
-        // Get template from URL parameter or from queue
         $templateType = $request->get('template', $queue['template']);
+        $templateFile = $request->get('template_file', $queue['template_file'] ?? null);
         
-        // Find the student data in the queue
+        // If no template file specified, use the first available
+        if (empty($templateFile)) {
+            $available = $this->getAvailableTemplates();
+            $templateFile = $available[$templateType][0] ?? null;
+        }
+        
+        if (empty($templateFile)) {
+            return response()->json(['error' => 'No template file available'], 400);
+        }
+        
         $studentData = null;
         foreach ($queue['students'] as $student) {
             if ($student['id'] == $studentId) {
@@ -541,19 +629,16 @@ class TranscriptController extends Controller
         $regNumber = $studentData['registration_number'];
         
         try {
-            // Clean the registration number
             $regNumber = trim($regNumber);
             $regNumber = preg_replace('/[\x00-\x1F\x7F-\x9F]/u', '', $regNumber);
             $regNumber = trim($regNumber);
             
-            // Find student
             $student = Student::where('username', $regNumber)->first();
             
             if (!$student) {
                 throw new \Exception("Student not found: {$regNumber}");
             }
             
-            // Get grades
             $grades = Registration::where('studentid', $regNumber)
                 ->whereNotNull('grade')
                 ->where('grade', '!=', '')
@@ -592,7 +677,7 @@ class TranscriptController extends Controller
                 'student_name' => $student->fullname,
                 'reg_number' => $student->username,
                 'gender' => $this->formatGender($student->sex),
-                'sex' => $this->formatGender($student->sex), // Added both for flexibility
+                'sex' => $this->formatGender($student->sex),
                 'program' => $this->getProgramName($student->majorid),
                 'generation_date' => now()->format('F d, Y'),
                 'total_courses' => $totalGrades,
@@ -602,20 +687,17 @@ class TranscriptController extends Controller
             
             $templateData = array_merge($studentDataArray, $gradeData);
             
-            // Generate file based on template type (saved with student name only)
             if ($templateType === 'excel') {
-                $filePath = $this->generateExcelTranscript($templateData, $student->fullname);
+                $filePath = $this->generateExcelTranscript($templateData, $student->fullname, $templateFile);
                 $fileExtension = 'xlsx';
             } else {
-                $filePath = $this->generateWordTranscript($templateData, $student->fullname);
+                $filePath = $this->generateWordTranscript($templateData, $student->fullname, $templateFile);
                 $fileExtension = 'docx';
             }
             
-            // Create filename with student name only (no registration number)
             $sanitizedName = $this->sanitizeFilename($student->fullname);
             $fileName = $sanitizedName . '.' . $fileExtension;
             
-            // Return file download with proper filename
             return response()->download($filePath, $fileName)->deleteFileAfterSend(true);
             
         } catch (\Exception $e) {
@@ -638,6 +720,7 @@ class TranscriptController extends Controller
         return response()->json([
             'total' => $queue['total'],
             'template' => $queue['template'],
+            'template_file' => $queue['template_file'] ?? null,
             'timestamp' => $queue['timestamp']
         ]);
     }
